@@ -1,0 +1,106 @@
+import { MARKETS } from "./config.js";
+import { diagnostics } from "./diagnostics.js";
+
+const STORAGE_KEY = "trading-analyst-custom-markets-v11-3";
+
+class MarketRegistry {
+  constructor() {
+    this.custom = this.loadCustom();
+    this.remote = {};
+  }
+
+  loadCustom() {
+    try {
+      return JSON.parse(localStorage.getItem(STORAGE_KEY) || "{}");
+    } catch {
+      return {};
+    }
+  }
+
+  saveCustom() {
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(this.custom));
+    } catch {}
+  }
+
+  all() {
+    return { ...MARKETS, ...this.remote, ...this.custom };
+  }
+
+  addManual({ symbol, name, oneSecond = false }) {
+    const cleanSymbol = String(symbol || "").trim();
+    const cleanName = String(name || "").trim();
+
+    if (!cleanSymbol || !cleanName) {
+      throw new Error("Símbolo y nombre son obligatorios.");
+    }
+
+    this.custom[cleanSymbol] = {
+      name: cleanName,
+      enabled: true,
+      oneSecond: Boolean(oneSecond),
+      source: "manual",
+      strategies: ["rise_fall", "even_odd", "over_under", "match"]
+    };
+
+    this.saveCustom();
+    diagnostics.ok("Mercado manual agregado.", { symbol: cleanSymbol, name: cleanName });
+    return this.custom[cleanSymbol];
+  }
+
+  removeManual(symbol) {
+    delete this.custom[symbol];
+    this.saveCustom();
+  }
+
+  ingestActiveSymbols(items = []) {
+    const detected = {};
+
+    items.forEach((item) => {
+      const symbol =
+        item.symbol ||
+        item.underlying_symbol ||
+        item.market_symbol ||
+        "";
+
+      const name =
+        item.display_name ||
+        item.underlying_symbol_name ||
+        item.name ||
+        symbol;
+
+      const marketText = [
+        item.market,
+        item.submarket,
+        item.market_display_name,
+        item.submarket_display_name,
+        name
+      ].filter(Boolean).join(" ").toLowerCase();
+
+      const looksVolatility =
+        marketText.includes("volatility") ||
+        marketText.includes("synthetic") ||
+        /^1HZ\d+V$/.test(symbol) ||
+        /^R_\d+$/.test(symbol);
+
+      if (!symbol || !looksVolatility) return;
+
+      detected[symbol] = {
+        name,
+        enabled: true,
+        source: "deriv",
+        oneSecond: /^1HZ/.test(symbol) || /\(1s\)|1 second/i.test(name),
+        strategies: ["rise_fall", "even_odd", "over_under", "match"]
+      };
+    });
+
+    this.remote = detected;
+    diagnostics.info("Mercados detectados desde Deriv.", {
+      count: Object.keys(detected).length
+    });
+
+    return detected;
+  }
+}
+
+export const marketRegistry = new MarketRegistry();
