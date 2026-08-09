@@ -559,13 +559,163 @@ function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-async function runCountdown(seconds) {
+/* ==========================================
+   SINCRONIZACIÓN CON BOT V1 MR
+   ========================================== */
+
+const BOT_CHANNEL_NAME =
+  "trading-analyzer-bot-v1-mr";
+
+const botChannel =
+  "BroadcastChannel" in window
+    ? new BroadcastChannel(
+        BOT_CHANNEL_NAME
+      )
+    : null;
+
+
+function enviarSenalAlBot(
+  result,
+  segundoEntrada
+) {
+
+  const ultimoPrecio =
+    marketBuffer.prices.length
+      ? marketBuffer.prices[
+          marketBuffer.prices.length - 1
+        ]
+      : null;
+
+  const ultimoDigito =
+    marketBuffer.digits.length
+      ? marketBuffer.digits[
+          marketBuffer.digits.length - 1
+        ]
+      : null;
+
+
+  const senal = {
+
+    id:
+      `${Date.now()}-${state.symbol}-${state.strategy}`,
+
+    mercado:
+      state.symbol,
+
+    estrategia:
+      state.strategy,
+
+    direccion:
+      result.direction,
+
+    confianza:
+      Number(result.score || 0),
+
+    precio:
+      ultimoPrecio,
+
+    ultimoDigito:
+      ultimoDigito,
+
+    tendencia:
+      state.snapshot?.trend?.direction
+      ?? null,
+
+    rsi:
+      state.snapshot?.rsi
+      ?? null,
+
+    momentum:
+      state.snapshot?.momentum?.direction
+      ?? null,
+
+    volatilidad:
+      state.snapshot?.volatility?.level
+      ?? null,
+
+    segundosEntrada:
+      segundoEntrada,
+
+    modo:
+      state.mode,
+
+    timestamp:
+      Date.now(),
+
+    origen:
+      `Trading Analyst Pro MR V${APP_VERSION}`
+
+  };
+
+
+  /* CANAL DIRECTO */
+
+  try {
+
+    botChannel?.postMessage(senal);
+
+  } catch (error) {
+
+    diagnostics.error(
+      "Error enviando señal al BOT.",
+      {
+        message: error.message
+      }
+    );
+
+  }
+
+
+  /* RESPALDO LOCALSTORAGE */
+
+  try {
+
+    localStorage.setItem(
+      "TA_BOT_SIGNAL_V1",
+      JSON.stringify(senal)
+    );
+
+  } catch {}
+
+
+  diagnostics.ok(
+    "Señal enviada al BOT V1 MR.",
+    {
+      mercado:
+        senal.mercado,
+
+      estrategia:
+        senal.estrategia,
+
+      direccion:
+        senal.direccion,
+
+      confianza:
+        senal.confianza,
+
+      segundoEntrada:
+        senal.segundosEntrada
+    }
+  );
+
+
+  log(
+    `BOT SYNC → ${senal.mercado} · ${senal.direccion} · ${senal.confianza}% · segundo ${segundoEntrada}`,
+    "ok"
+  );
+
+}
+async function runCountdown(
+  seconds,
+  result
+) {
   clearInterval(state.countdownTimer);
 
   return new Promise((resolve) => {
     const startedAt = performance.now();
     let lastShown = null;
     let alertRunId = 0;
+    let senalBotEnviada = false;
 
     const flashEntry = () => {
       if (!UI.entryAlertEnabled?.checked || !UI.entryFlash) return;
@@ -585,6 +735,30 @@ async function runCountdown(seconds) {
         setText(UI.countdown, remaining);
 
         const target = Number(UI.entryAlertSecond?.value || 10);
+       /* MOMENTO EXACTO DE ENTRADA DEL BOT */
+
+if (
+  !senalBotEnviada &&
+  remaining === target
+) {
+
+  senalBotEnviada = true;
+
+  const delay = Math.max(
+    0,
+    Number(UI.entryAlertDelay?.value || 0)
+  );
+
+  setTimeout(() => {
+
+    enviarSenalAlBot(
+      result,
+      target
+    );
+
+  }, delay);
+
+} 
         const thisRun = ++alertRunId;
         const spoken = voiceAssistant.speakCountdownNumber(remaining);
 
@@ -625,7 +799,10 @@ async function beginPredictionSequence(result) {
   setText(UI.engineStage, "VENTANA DE EJECUCIÓN");
   setText(UI.engineDetail, "Conteo sincronizado con segundos reales.");
   UI.engineProgress.style.width = "100%";
-  await runCountdown(ENGINE.executionSeconds);
+  await runCountdown(
+  ENGINE.executionSeconds,
+  result
+);
   await sleep(450);
   finishPrediction("La ventana de ejecución terminó.");
 }
