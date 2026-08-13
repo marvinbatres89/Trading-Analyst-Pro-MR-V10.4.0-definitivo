@@ -139,28 +139,25 @@ const state = {
 
 
 /* ==========================================
-   FIX11
-   PREAVISO REAL AL BOT
+   FIX13.3
+   SINCRONIZACIÓN VISUAL + BOT
 
-   IMPORTANTE:
+   OBJETIVO:
 
-   executionSeconds sigue siendo 10.
-
-   YA NO intentamos encontrar el segundo 12
-   dentro de una cuenta que comienza en 10.
-
-   AHORA:
-   1. señal confirmada
-   2. target = ahora + 2 segundos
-   3. se envía inmediatamente al BOT
-   4. esperamos esos 2 segundos
-   5. comienza visualmente el segundo 10
+   1. SEÑAL CONFIRMADA
+   2. TARGET SE CREA INMEDIATAMENTE
+   3. SE ENVÍA AL BOT INMEDIATAMENTE
+   4. LA VOZ YA NO BLOQUEA EL TARGET
+   5. AL LLEGAR AL TARGET COMIENZA EL 10
+   6. BOT Y CONTADOR COMPARTEN EL MISMO TARGET
    ========================================== */
 
-const BOT_PREAVISO_SEGUNDOS = 2.0;
+const BOT_PREAVISO_SEGUNDOS =
+  2.0;
 
 const BOT_PREAVISO_MS =
-  BOT_PREAVISO_SEGUNDOS * 1000;
+  BOT_PREAVISO_SEGUNDOS *
+  1000;
 
 
 /* ==========================================
@@ -171,10 +168,18 @@ function setText(
   element,
   value
 ) {
-  if (element) {
+
+  if (
+    element
+  ) {
+
     element.textContent =
-      String(value);
+      String(
+        value
+      );
+
   }
+
 }
 
 
@@ -182,46 +187,67 @@ function log(
   message,
   level = ""
 ) {
-  if (!UI.activityLog) {
+
+  if (
+    !UI.activityLog
+  ) {
+
     return;
+
   }
 
+
   const line =
-    document.createElement("p");
+    document.createElement(
+      "p"
+    );
+
 
   line.textContent =
     `[${new Date().toLocaleTimeString("es-SV")}] ${message}`;
 
+
   line.className =
     level;
+
 
   UI.activityLog.prepend(
     line
   );
 
+
   while (
     UI.activityLog.children.length >
     ENGINE.maxLogLines
   ) {
-    UI.activityLog.lastElementChild?.remove();
+
+    UI.activityLog
+      .lastElementChild
+      ?.remove();
+
   }
+
 }
 
 
 function statsKey() {
+
   return [
     state.symbol,
     state.strategy,
     state.mode
   ].join("|");
+
 }
 
 
 function renderStats() {
+
   const value =
     statistics.get(
       statsKey()
     );
+
 
   const accuracy =
     value.tests
@@ -231,37 +257,47 @@ function renderStats() {
         ) * 100
       : null;
 
+
   setText(
     UI.statsTests,
     value.tests
   );
+
 
   setText(
     UI.statsSuccess,
     value.success
   );
 
+
   setText(
     UI.statsFailed,
     value.failed
   );
 
+
   setText(
     UI.statsAccuracy,
-    accuracy === null
+    accuracy ===
+      null
       ? "NO DATA"
       : `${accuracy.toFixed(1)}%`
   );
+
 }
 
 
 function minimumTicks() {
+
   if (
     state.strategy ===
     "match"
   ) {
+
     return ENGINE.minMatchTicks;
+
   }
+
 
   if (
     state.strategy ===
@@ -269,13 +305,17 @@ function minimumTicks() {
     state.strategy ===
       "crash"
   ) {
+
     return ENGINE.minSpikeTicks;
+
   }
+
 
   return state.mode ===
     "deep"
     ? ENGINE.minDeepTicks
     : ENGINE.minFastTicks;
+
 }
 
 
@@ -283,10 +323,12 @@ function marketSupportsStrategy(
   symbol = state.symbol,
   strategy = state.strategy
 ) {
+
   const market =
     marketRegistry.all()[
       symbol
     ];
+
 
   return Boolean(
     market
@@ -295,10 +337,12 @@ function marketSupportsStrategy(
         strategy
       )
   );
+
 }
 
 
 function canPredict() {
+
   return (
     state.connected &&
     state.engineOn &&
@@ -309,6 +353,7 @@ function canPredict() {
     state.latency.operable &&
     marketSupportsStrategy()
   );
+
 }
 
 
@@ -317,12 +362,14 @@ function canPredict() {
    ========================================== */
 
 function renderControls() {
+
   setText(
     UI.engineStatus,
     state.engineOn
       ? "ON"
       : "OFF"
   );
+
 
   UI.engineButton.textContent =
     state.engineOn
@@ -333,18 +380,22 @@ function renderControls() {
           "startEngine"
         );
 
+
   UI.connectButton.textContent =
     i18n.t(
       "connect"
     );
+
 
   UI.disconnectButton.textContent =
     i18n.t(
       "disconnect"
     );
 
+
   UI.predictionButton.disabled =
     !canPredict();
+
 
   UI.predictionButton.textContent =
     state.cooldown
@@ -355,9 +406,11 @@ function renderControls() {
           "prediction"
         );
 
+
   const locked =
     state.predictionActive ||
     state.cooldown;
+
 
   [
     UI.marketSelect,
@@ -365,10 +418,13 @@ function renderControls() {
     UI.modeSelect
   ].forEach(
     (element) => {
+
       element.disabled =
         locked;
+
     }
   );
+
 }
 
 
@@ -380,14 +436,17 @@ function renderConnection(
   status,
   label
 ) {
+
   state.connected =
     status ===
     "live";
+
 
   setText(
     UI.connectionStatus,
     label
   );
+
 
   UI.connectButton.disabled =
     status ===
@@ -395,24 +454,31 @@ function renderConnection(
     status ===
       "live";
 
+
   UI.disconnectButton.disabled =
     status !==
     "live";
+
 
   UI.engineButton.disabled =
     status !==
     "live";
 
+
   if (
     !state.connected &&
     state.engineOn
   ) {
+
     stopEngine(
       false
     );
+
   }
 
+
   renderControls();
+
 }
 
 
@@ -421,8 +487,10 @@ function renderConnection(
    ========================================== */
 
 function renderLatency() {
+
   const value =
     state.latency;
+
 
   setText(
     UI.latencyStatus,
@@ -434,6 +502,7 @@ function renderLatency() {
         )} ms`
   );
 
+
   UI.latencyStatus.className =
     `status-pill ${
       value.operable
@@ -443,6 +512,7 @@ function renderLatency() {
           ? "danger-pill"
           : ""
     }`;
+
 }
 
 
@@ -451,8 +521,10 @@ function renderLatency() {
    ========================================== */
 
 function renderDigits() {
+
   UI.digits.innerHTML =
     "";
+
 
   marketBuffer.digits
     .slice(
@@ -464,10 +536,12 @@ function renderDigits() {
         index,
         array
       ) => {
+
         const item =
           document.createElement(
             "span"
           );
+
 
         item.className =
           `digit${
@@ -478,14 +552,18 @@ function renderDigits() {
               : ""
           }`;
 
+
         item.textContent =
           digit;
+
 
         UI.digits.appendChild(
           item
         );
+
       }
     );
+
 }
 
 
@@ -496,12 +574,14 @@ function renderDigits() {
 function renderIndicators(
   snapshot
 ) {
+
   setText(
     UI.trend,
     i18n.translateState(
       snapshot.trend.direction
     )
   );
+
 
   setText(
     UI.rsi,
@@ -513,6 +593,7 @@ function renderIndicators(
         )
   );
 
+
   setText(
     UI.momentum,
     i18n.translateState(
@@ -522,6 +603,7 @@ function renderIndicators(
     )
   );
 
+
   setText(
     UI.volatility,
     i18n.translateState(
@@ -530,6 +612,7 @@ function renderIndicators(
         .level
     )
   );
+
 }
 
 
@@ -538,20 +621,24 @@ function renderIndicators(
    ========================================== */
 
 function renderLanguage() {
+
   document
     .querySelectorAll(
       "[data-i18n]"
     )
     .forEach(
       (element) => {
+
         element.textContent =
           i18n.t(
             element
               .dataset
               .i18n
           );
+
       }
     );
+
 
   document
     .querySelectorAll(
@@ -559,21 +646,27 @@ function renderLanguage() {
     )
     .forEach(
       (option) => {
+
         option.textContent =
           i18n.t(
             option
               .dataset
               .i18nOption
           );
+
       }
     );
+
 
   if (
     UI.languageSelect
   ) {
+
     UI.languageSelect.value =
       i18n.language;
+
   }
+
 
   UI.modeSelect
     ?.dispatchEvent(
@@ -582,15 +675,20 @@ function renderLanguage() {
       )
     );
 
+
   renderControls();
+
 
   if (
     state.snapshot
   ) {
+
     renderIndicators(
       state.snapshot
     );
+
   }
+
 }
 
 
@@ -599,14 +697,18 @@ function renderLanguage() {
    ========================================== */
 
 function populateMarketSelector() {
+
   const previous =
     state.symbol;
+
 
   const markets =
     marketRegistry.all();
 
+
   UI.marketSelect.innerHTML =
     "";
+
 
   const compatible =
     Object.entries(
@@ -633,6 +735,7 @@ function populateMarketSelector() {
           a,
           b
         ) => {
+
           const rank =
             (
               [
@@ -640,16 +743,19 @@ function populateMarketSelector() {
                 market
               ]
             ) => {
+
               const name =
                 String(
                   market.name ||
                   ""
                 );
 
+
               const match =
                 name.match(
                   /(?:Volatility\s+|Boom\s+|Crash\s+)(\d+)/i
                 );
+
 
               const n =
                 Number(
@@ -657,17 +763,21 @@ function populateMarketSelector() {
                   999
                 );
 
+
               if (
                 /^R_\d+$/.test(
                   symbol
                 )
               ) {
+
                 return [
                   0,
                   n,
                   name
                 ];
+
               }
+
 
               if (
                 /^1HZ\d+V$/.test(
@@ -677,49 +787,66 @@ function populateMarketSelector() {
                   name
                 )
               ) {
+
                 return [
                   1,
                   n,
                   name
                 ];
+
               }
+
 
               if (
                 /boom/i.test(
                   name
                 )
               ) {
+
                 return [
                   2,
                   n,
                   name
                 ];
+
               }
+
 
               if (
                 /crash/i.test(
                   name
                 )
               ) {
+
                 return [
                   3,
                   n,
                   name
                 ];
+
               }
+
 
               return [
                 4,
                 n,
                 name
               ];
+
             };
 
+
           const ra =
-            rank(a);
+            rank(
+              a
+            );
+
 
           const rb =
-            rank(b);
+            rank(
+              b
+            );
+
 
           return (
             ra[0] -
@@ -731,8 +858,10 @@ function populateMarketSelector() {
                 rb[2]
               )
           );
+
         }
       );
+
 
   compatible.forEach(
     (
@@ -741,16 +870,20 @@ function populateMarketSelector() {
         market
       ]
     ) => {
+
       const option =
         document.createElement(
           "option"
         );
 
+
       option.value =
         symbol;
 
+
       option.textContent =
         market.name;
+
 
       option.dataset.marketFamily =
         /boom/i.test(
@@ -776,11 +909,14 @@ function populateMarketSelector() {
                 ? "standard"
                 : "other";
 
+
       UI.marketSelect.appendChild(
         option
       );
+
     }
   );
+
 
   if (
     compatible.some(
@@ -793,8 +929,10 @@ function populateMarketSelector() {
         previous
     )
   ) {
+
     UI.marketSelect.value =
       previous;
+
   }
 
   else if (
@@ -802,19 +940,24 @@ function populateMarketSelector() {
       .options
       .length
   ) {
+
     state.symbol =
       UI.marketSelect
         .options[0]
         .value;
 
+
     UI.marketSelect.value =
       state.symbol;
+
   }
+
 
   UI.marketSelect.disabled =
     !UI.marketSelect
       .options
       .length;
+
 
   UI.marketSelect.dispatchEvent(
     new Event(
@@ -822,10 +965,12 @@ function populateMarketSelector() {
     )
   );
 
+
   return (
     previous !==
     state.symbol
   );
+
 }
 
 
@@ -834,6 +979,7 @@ function populateMarketSelector() {
    ========================================== */
 
 function renderTicker() {
+
   setText(
     UI.tickerMarketName,
     marketRegistry.all()[
@@ -841,6 +987,7 @@ function renderTicker() {
     ]?.name ||
       state.symbol
   );
+
 
   setText(
     UI.tickerConnection,
@@ -851,12 +998,14 @@ function renderTicker() {
       : "● OFFLINE"
   );
 
+
   setText(
     UI.tickerPrice,
     UI.price
       ?.textContent ||
       "--"
   );
+
 
   setText(
     UI.tickerLastDigit,
@@ -865,24 +1014,29 @@ function renderTicker() {
       "--"
   );
 
+
   const digits =
     marketBuffer.digits
       .slice(
         -20
       );
 
+
   UI.tickerDigits.innerHTML =
     "";
+
 
   digits.forEach(
     (
       digit,
       index
     ) => {
+
       const node =
         document.createElement(
           "span"
         );
+
 
       node.className =
         `ticker-digit ${
@@ -899,14 +1053,18 @@ function renderTicker() {
             : ""
         }`;
 
+
       node.textContent =
         digit;
+
 
       UI.tickerDigits.appendChild(
         node
       );
+
     }
   );
+
 
   const even =
     digits.filter(
@@ -916,10 +1074,12 @@ function renderTicker() {
         0
     ).length;
 
+
   setText(
     UI.tickerEven,
     even
   );
+
 
   setText(
     UI.tickerOdd,
@@ -927,17 +1087,21 @@ function renderTicker() {
       even
   );
 
+
   const prices =
     marketBuffer.prices
       .slice(
         -21
       );
 
+
   let rises =
     0;
 
+
   let falls =
     0;
+
 
   for (
     let index =
@@ -947,6 +1111,7 @@ function renderTicker() {
     index +=
       1
   ) {
+
     if (
       prices[index] >
       prices[
@@ -954,9 +1119,12 @@ function renderTicker() {
         1
       ]
     ) {
+
       rises +=
         1;
+
     }
+
 
     if (
       prices[index] <
@@ -965,20 +1133,26 @@ function renderTicker() {
         1
       ]
     ) {
+
       falls +=
         1;
+
     }
+
   }
+
 
   setText(
     UI.tickerRises,
     rises
   );
 
+
   setText(
     UI.tickerFalls,
     falls
   );
+
 }
 
 
@@ -989,38 +1163,47 @@ function renderTicker() {
 function processTick(
   tick
 ) {
+
   if (
     tick.symbol !==
     state.symbol
   ) {
+
     return;
+
   }
+
 
   const rendered =
     marketBuffer.push(
       tick
     );
 
+
   state.latency =
     latencyMonitor.update(
       tick
     );
+
 
   setText(
     UI.price,
     rendered.formatted
   );
 
+
   setText(
     UI.tickCount,
     marketBuffer.ticks
   );
+
 
   setText(
     UI.lastDigit,
     rendered.digit ??
       "--"
   );
+
 
   setText(
     UI.updateTime,
@@ -1032,18 +1215,24 @@ function processTick(
     )
   );
 
+
   setText(
     UI.memoryStatus,
     marketBuffer.prices.length
   );
 
+
   renderDigits();
+
   renderLatency();
+
   renderTicker();
+
 
   if (
     state.engineOn
   ) {
+
     state.snapshot =
       buildSnapshot({
         prices:
@@ -1056,18 +1245,23 @@ function processTick(
           state.mode
       });
 
+
     state.lastOpportunity =
       exploreOpportunity(
         state.strategy,
         state.snapshot
       );
 
+
     renderIndicators(
       state.snapshot
     );
+
   }
 
+
   renderControls();
+
 }
 
 
@@ -1076,38 +1270,49 @@ function processTick(
    ========================================== */
 
 function startEngine() {
+
   if (
     !state.connected
   ) {
+
     return;
+
   }
+
 
   state.engineOn =
     true;
 
+
   state.snapshot =
     null;
 
+
   state.lastOpportunity =
     null;
+
 
   setText(
     UI.controlMessage,
     "Motor encendido. Análisis continuo activo en segundo plano."
   );
 
+
   setText(
     UI.engineStage,
     "ANÁLISIS CONTINUO"
   );
+
 
   setText(
     UI.engineDetail,
     "Los motores preparan oportunidades; no se mostrará ninguna hasta pulsar PREDICTION."
   );
 
+
   UI.engineProgress.style.width =
     "25%";
+
 
   voiceAssistant.speak(
     `Motor encendido. ${
@@ -1122,6 +1327,7 @@ function startEngine() {
     }.`
   );
 
+
   diagnostics.ok(
     "Motor encendido.",
     {
@@ -1133,98 +1339,125 @@ function startEngine() {
     }
   );
 
+
   log(
     "Análisis continuo activado.",
     "ok"
   );
 
+
   renderControls();
+
 }
 
 
 function stopEngine(
   announce = true
 ) {
+
   state.engineOn =
     false;
+
 
   state.predictionActive =
     false;
 
+
   state.cooldown =
     false;
+
 
   clearInterval(
     state.countdownTimer
   );
 
+
   clearTimeout(
     state.cooldownTimer
   );
+
 
   memoryManager.clean(
     "stop-engine"
   );
 
+
   marketBuffer.reset();
+
 
   latencyMonitor.reset();
 
+
   state.latency =
     latencyMonitor.current;
+
 
   setText(
     UI.controlMessage,
     "Motor apagado y memoria temporal liberada."
   );
 
+
   setText(
     UI.engineStage,
     "MOTOR APAGADO"
   );
+
 
   setText(
     UI.engineDetail,
     "Encienda el motor para comenzar un análisis limpio."
   );
 
+
   UI.engineProgress.style.width =
     "0%";
+
 
   setText(
     UI.price,
     "--"
   );
 
+
   setText(
     UI.tickCount,
     0
   );
+
 
   setText(
     UI.lastDigit,
     "--"
   );
 
+
   setText(
     UI.memoryStatus,
     0
   );
 
+
   UI.digits.innerHTML =
     "";
 
+
   renderLatency();
+
 
   if (
     announce
   ) {
+
     voiceAssistant.speak(
       "Motor apagado. Memoria temporal liberada."
     );
+
   }
 
+
   renderControls();
+
 }
 
 
@@ -1238,40 +1471,49 @@ function showFloating(
   value,
   detail
 ) {
+
   UI.floatingSignal.className =
     `signal-toast ${type} visible`;
+
 
   setText(
     UI.floatingState,
     stateText
   );
 
+
   setText(
     UI.floatingValue,
     value
   );
 
+
   setText(
     UI.floatingDetail,
     detail
   );
+
 }
 
 
 function hideFloating() {
+
   UI.floatingSignal
     .classList
     .remove(
       "visible"
     );
+
 }
 
 
 function showReasons(
   result
 ) {
+
   UI.signalReasons.innerHTML =
     "";
+
 
   [
     ...(
@@ -1293,19 +1535,24 @@ function showReasons(
     )
     .forEach(
       (reason) => {
+
         const item =
           document.createElement(
             "li"
           );
 
+
         item.textContent =
           reason;
+
 
         UI.signalReasons.appendChild(
           item
         );
+
       }
     );
+
 }
 
 
@@ -1316,35 +1563,44 @@ function showReasons(
 function finishPrediction(
   message
 ) {
+
   clearInterval(
     state.countdownTimer
   );
 
+
   state.predictionActive =
     false;
 
+
   state.cooldown =
     true;
+
 
   setText(
     UI.engineStage,
     "PREDICCIÓN FINALIZADA"
   );
 
+
   setText(
     UI.engineDetail,
     "No se generará otra señal automáticamente."
   );
 
+
   UI.engineProgress.style.width =
     "0%";
+
 
   setText(
     UI.controlMessage,
     `${message} Puede cambiar mercado o solicitar otra predicción.`
   );
 
+
   hideFloating();
+
 
   voiceAssistant.speak(
     "Predicción finalizada. Genera una nueva señal.",
@@ -1357,6 +1613,7 @@ function finishPrediction(
     }
   );
 
+
   diagnostics.info(
     "Predicción finalizada.",
     {
@@ -1364,32 +1621,41 @@ function finishPrediction(
     }
   );
 
+
   renderControls();
+
 
   clearTimeout(
     state.cooldownTimer
   );
 
+
   state.cooldownTimer =
     setTimeout(
       () => {
+
         state.cooldown =
           false;
+
 
         setText(
           UI.engineStage,
           "ANÁLISIS CONTINUO"
         );
 
+
         setText(
           UI.engineDetail,
           "Pulse PREDICTION para solicitar otra decisión."
         );
 
+
         renderControls();
+
       },
       ENGINE.cooldownMs
     );
+
 }
 
 
@@ -1398,21 +1664,28 @@ function finishPrediction(
    ========================================== */
 
 async function requestPrediction() {
+
   if (
     !canPredict()
   ) {
+
     return;
+
   }
+
 
   state.predictionActive =
     true;
 
+
   renderControls();
+
 
   setText(
     UI.engineStage,
     "PREDICIENDO MERCADO"
   );
+
 
   setText(
     UI.engineDetail,
@@ -1428,28 +1701,34 @@ async function requestPrediction() {
     }`
   );
 
+
   UI.engineProgress.style.width =
     "55%";
+
 
   setText(
     UI.signalState,
     "ANALYZING"
   );
 
+
   setText(
     UI.signalTitle,
     "Validación rápida"
   );
+
 
   setText(
     UI.signalValue,
     "--"
   );
 
+
   setText(
     UI.countdown,
     "--"
   );
+
 
   voiceAssistant.speak(
     `Prediciendo ${
@@ -1459,6 +1738,7 @@ async function requestPrediction() {
       state.symbol
     }.`
   );
+
 
   diagnostics.info(
     "Predicción solicitada.",
@@ -1473,6 +1753,7 @@ async function requestPrediction() {
         state.mode
     }
   );
+
 
   const validationDelay =
     state.strategy ===
@@ -1493,6 +1774,7 @@ async function requestPrediction() {
           ? ENGINE.spikeValidationMs
           : ENGINE.quickValidationMs;
 
+
   await new Promise(
     (resolve) =>
       setTimeout(
@@ -1501,11 +1783,13 @@ async function requestPrediction() {
       )
   );
 
+
   const first =
     exploreOpportunity(
       state.strategy,
       state.snapshot
     );
+
 
   const freshSnapshot =
     buildSnapshot({
@@ -1519,11 +1803,13 @@ async function requestPrediction() {
         state.mode
     });
 
+
   const fresh =
     exploreOpportunity(
       state.strategy,
       freshSnapshot
     );
+
 
   const validation =
     validateOpportunity(
@@ -1532,11 +1818,13 @@ async function requestPrediction() {
       freshSnapshot
     );
 
+
   const consensus =
     buildConsensus(
       first,
       validation
     );
+
 
   const timing =
     evaluateTiming({
@@ -1549,6 +1837,7 @@ async function requestPrediction() {
       latency:
         state.latency
     });
+
 
   const quality =
     applyQualityFilter({
@@ -1563,7 +1852,9 @@ async function requestPrediction() {
       timing
     });
 
+
   const result = {
+
     ...consensus,
 
     strategy:
@@ -1583,15 +1874,19 @@ async function requestPrediction() {
 
     metadata:
       consensus.metadata
+
   };
+
 
   setText(
     UI.signalScore,
     `${quality.score}/100`
   );
 
+
   UI.signalBar.style.width =
     `${quality.score}%`;
+
 
   showReasons(
     result
@@ -1602,23 +1897,28 @@ async function requestPrediction() {
     first.direction ===
     "NO_OPERAR"
   ) {
+
     UI.signalCard.className =
       "card signal-card no-operate";
+
 
     setText(
       UI.signalState,
       "NO OPERAR"
     );
 
+
     setText(
       UI.signalTitle,
       "Matches descartado"
     );
 
+
     setText(
       UI.signalValue,
       "MATCHES 0"
     );
+
 
     showFloating(
       "no-operate",
@@ -1627,9 +1927,11 @@ async function requestPrediction() {
       "El número 0 está excluido."
     );
 
+
     voiceAssistant.speak(
       "Coincidencia cero. No operar."
     );
+
 
     setTimeout(
       () =>
@@ -1639,30 +1941,37 @@ async function requestPrediction() {
       2200
     );
 
+
     return;
+
   }
 
 
   if (
     !quality.approved
   ) {
+
     UI.signalCard.className =
       "card signal-card wait";
+
 
     setText(
       UI.signalState,
       "ESPERAR"
     );
 
+
     setText(
       UI.signalTitle,
       "Sin entrada suficientemente clara"
     );
 
+
     setText(
       UI.signalValue,
       "ESPERAR"
     );
+
 
     showFloating(
       "prepare",
@@ -1671,9 +1980,11 @@ async function requestPrediction() {
       quality.reason
     );
 
+
     voiceAssistant.speak(
       "No hay una entrada suficientemente clara. Espere y vuelva a solicitar una predicción."
     );
+
 
     setTimeout(
       () =>
@@ -1683,7 +1994,9 @@ async function requestPrediction() {
       2600
     );
 
+
     return;
+
   }
 
 
@@ -1692,28 +2005,34 @@ async function requestPrediction() {
       result
     );
 
+
   const explanation =
     briefExplanation(
       result
     );
 
+
   UI.signalCard.className =
     "card signal-card confirmed";
+
 
   setText(
     UI.signalState,
     "READY"
   );
 
+
   setText(
     UI.signalTitle,
     "Predicción confirmada"
   );
 
+
   setText(
     UI.signalValue,
     value
   );
+
 
   showFloating(
     "confirmed",
@@ -1723,22 +2042,27 @@ async function requestPrediction() {
       "Filtros superados."
   );
 
+
   setText(
     UI.engineStage,
     "PREDICCIÓN CONFIRMADA"
   );
 
+
   setText(
     UI.engineDetail,
-    "Preparando preaviso FIX11."
+    "Sincronizando BOT y cuenta regresiva FIX13.3."
   );
+
 
   UI.engineProgress.style.width =
     "88%";
 
+
   await beginPredictionSequence(
     result
   );
+
 }
 
 
@@ -1749,30 +2073,39 @@ async function requestPrediction() {
 function renderDiagnostics(
   entries
 ) {
+
   if (
     !entries.length
   ) {
+
     UI.diagnosticContent.textContent =
       "Sin eventos.";
 
+
     return;
+
   }
+
 
   UI.diagnosticContent.innerHTML =
     "";
+
 
   entries
     .slice()
     .reverse()
     .forEach(
       (entry) => {
+
         const line =
           document.createElement(
             "div"
           );
 
+
         line.className =
           `diagnostic-line ${entry.level}`;
+
 
         const extra =
           entry.data
@@ -1783,14 +2116,18 @@ function renderDiagnostics(
               )}`
             : "";
 
+
         line.textContent =
           `[${entry.time}] ${entry.message}${extra}`;
+
 
         UI.diagnosticContent.appendChild(
           line
         );
+
       }
     );
+
 }
 
 
@@ -1799,7 +2136,9 @@ function renderDiagnostics(
    ========================================== */
 
 function calibrationContext() {
+
   return {
+
     symbol:
       state.symbol,
 
@@ -1808,21 +2147,26 @@ function calibrationContext() {
 
     mode:
       state.mode
+
   };
+
 }
 
 
 function renderCalibration() {
+
   const recommendation =
     executionCalibrator
       .recommendation(
         calibrationContext()
       );
 
+
   setText(
     UI.calibrationStatus,
     recommendation.status
   );
+
 
   setText(
     UI.calibrationSummary,
@@ -1831,18 +2175,23 @@ function renderCalibration() {
       : "Registre al menos 20 resultados por segundo antes de mostrar una recomendación."
   );
 
+
   UI.calibrationTable.innerHTML =
     "";
 
+
   recommendation.rows.forEach(
     (row) => {
+
       const line =
         document.createElement(
           "div"
         );
 
+
       line.className =
         "calibration-row";
+
 
       line.innerHTML = `
         <strong>Seg. ${row.second}</strong>
@@ -1851,17 +2200,21 @@ function renderCalibration() {
         <span>${row.failed} -</span>
       `;
 
+
       UI.calibrationTable.appendChild(
         line
       );
+
     }
   );
+
 }
 
 
 function sleep(
   ms
 ) {
+
   return new Promise(
     (resolve) =>
       setTimeout(
@@ -1869,11 +2222,12 @@ function sleep(
         ms
       )
   );
+
 }
 
 
 /* ==========================================
-   SINCRONIZACIÓN BOT FIX11
+   SINCRONIZACIÓN BOT FIX13.3
    ========================================== */
 
 const BOT_CHANNEL_NAME =
@@ -1898,6 +2252,7 @@ function enviarSenalAlBot(
   segundoEntrada,
   targetExecutionAt
 ) {
+
   const ultimoPrecio =
     marketBuffer.prices.length
       ? marketBuffer.prices[
@@ -1929,27 +2284,35 @@ function enviarSenalAlBot(
     target <=
       Date.now()
   ) {
+
     diagnostics.error(
-      "FIX11: targetExecutionAt inválido.",
+      "FIX13.3: targetExecutionAt inválido.",
       {
         targetExecutionAt:
           target
       }
     );
 
+
     log(
-      "BOT FIX11 ERROR → target inválido.",
+      "BOT FIX13.3 ERROR → target inválido.",
       "error"
     );
 
+
     return false;
+
   }
+
+
+  const ahoraEpoch =
+    Date.now();
 
 
   const senal = {
 
     id:
-      `${Date.now()}-${state.symbol}-${state.strategy}`,
+      `${ahoraEpoch}-${state.symbol}-${state.strategy}`,
 
     mercado:
       state.symbol,
@@ -2004,7 +2367,19 @@ function enviarSenalAlBot(
     targetExecutionAt:
       target,
 
+    /*
+      FIX13.3:
+      MARCA ABSOLUTA PARA EL BOT.
+    */
+
+    analyzerSentEpoch:
+      ahoraEpoch,
+
+    timestamp:
+      ahoraEpoch,
+
     metadata: {
+
       ...(
         result.metadata ||
         {}
@@ -2013,6 +2388,9 @@ function enviarSenalAlBot(
       targetExecutionAt:
         target,
 
+      analyzerSentEpoch:
+        ahoraEpoch,
+
       preavisoBotSegundos:
         BOT_PREAVISO_SEGUNDOS,
 
@@ -2020,11 +2398,9 @@ function enviarSenalAlBot(
         BOT_PREAVISO_MS,
 
       fix:
-        "FIX11-TARGET"
-    },
+        "FIX13.3-SYNC"
 
-    timestamp:
-      Date.now(),
+    },
 
     origen:
       `Trading Analyst Pro MR V${APP_VERSION}`
@@ -2035,26 +2411,33 @@ function enviarSenalAlBot(
   let broadcastOk =
     false;
 
+
   let storageOk =
     false;
 
 
   try {
+
     if (
       botChannel
     ) {
+
       botChannel.postMessage(
         senal
       );
 
+
       broadcastOk =
         true;
+
     }
+
   }
 
   catch (
     error
   ) {
+
     diagnostics.error(
       "Error BroadcastChannel hacia BOT.",
       {
@@ -2062,10 +2445,12 @@ function enviarSenalAlBot(
           error.message
       }
     );
+
   }
 
 
   try {
+
     localStorage.setItem(
       "TA_BOT_SIGNAL_V1",
       JSON.stringify(
@@ -2073,13 +2458,16 @@ function enviarSenalAlBot(
       )
     );
 
+
     storageOk =
       true;
+
   }
 
   catch (
     error
   ) {
+
     diagnostics.error(
       "Error localStorage hacia BOT.",
       {
@@ -2087,6 +2475,7 @@ function enviarSenalAlBot(
           error.message
       }
     );
+
   }
 
 
@@ -2096,8 +2485,9 @@ function enviarSenalAlBot(
 
 
   diagnostics.ok(
-    "Señal FIX11 enviada al BOT V1 MR.",
+    "Señal FIX13.3 enviada al BOT V1 MR.",
     {
+
       mercado:
         senal.mercado,
 
@@ -2113,6 +2503,9 @@ function enviarSenalAlBot(
       targetExecutionAt:
         senal.targetExecutionAt,
 
+      analyzerSentEpoch:
+        senal.analyzerSentEpoch,
+
       anticipacionMs:
         anticipacion,
 
@@ -2121,12 +2514,13 @@ function enviarSenalAlBot(
 
       localStorage:
         storageOk
+
     }
   );
 
 
   log(
-    `BOT FIX11 → ${senal.mercado} · ${senal.direccion} · ${senal.confianza}% · TARGET ${segundoEntrada} · PREAVISO ${(anticipacion / 1000).toFixed(2)} s`,
+    `BOT FIX13.3 → ${senal.mercado} · ${senal.direccion} · ${senal.confianza}% · TARGET ${segundoEntrada} · PREAVISO ${(anticipacion / 1000).toFixed(2)} s`,
     "ok"
   );
 
@@ -2135,23 +2529,18 @@ function enviarSenalAlBot(
     broadcastOk ||
     storageOk
   );
+
 }
 
 
 /* ==========================================
    CUENTA REGRESIVA
-
-   AQUÍ YA NO SE ENVÍA AL BOT.
-
-   Solo muestra 10 → 0.
-
-   La señal ya fue enviada durante
-   el PREAVISO anterior.
    ========================================== */
 
 async function runCountdown(
   seconds
 ) {
+
   clearInterval(
     state.countdownTimer
   );
@@ -2180,7 +2569,9 @@ async function runCountdown(
               ?.checked ||
             !UI.entryFlash
           ) {
+
             return;
+
           }
 
 
@@ -2203,11 +2594,14 @@ async function runCountdown(
 
           setTimeout(
             () => {
+
               UI.entryFlash.hidden =
                 true;
+
             },
             650
           );
+
         };
 
 
@@ -2238,6 +2632,7 @@ async function runCountdown(
             remaining !==
             lastShown
           ) {
+
             lastShown =
               remaining;
 
@@ -2284,7 +2679,9 @@ async function runCountdown(
                     thisRun !==
                     alertRunId
                   ) {
+
                     return;
+
                   }
 
 
@@ -2348,31 +2745,31 @@ async function runCountdown(
 
     }
   );
+
 }
 
 
 /* ==========================================
-   SECUENCIA FIX11 CORREGIDA
+   SECUENCIA FIX13.3
 
-   EJEMPLO TARGET 10:
+   CAMBIO CLAVE:
+
+   YA NO ESPERAMOS A QUE TERMINE LA VOZ
+   ANTES DE CREAR EL TARGET.
 
    AHORA:
-      señal confirmada
-
-   AHORA + 0:
-      se envía al BOT
-
-   AHORA + 2 s:
-      targetExecutionAt
-      pantalla muestra 10
-
-   DESDE AQUÍ:
-      10, 9, 8...
+   T0 = SEÑAL CONFIRMADA
+   T0 = TARGET CREADO
+   T0 = ENVÍO AL BOT
+   T0 -> VOZ NO BLOQUEANTE
+   T0 + 2s = CONTADOR 10
+   T0 + 2s = BUY TARGET BOT
    ========================================== */
 
 async function beginPredictionSequence(
   result
 ) {
+
   const explanation =
     briefExplanation(
       result
@@ -2381,45 +2778,6 @@ async function beginPredictionSequence(
 
   state.lastPredictionResult =
     result;
-
-
-  setText(
-    UI.engineStage,
-    "PREDICCIÓN CONFIRMADA"
-  );
-
-
-  setText(
-    UI.engineDetail,
-    "Escuche la señal. Preparando sincronización FIX11."
-  );
-
-
-  UI.engineProgress.style.width =
-    "88%";
-
-
-  showFloating(
-    "confirmed",
-    "EJECUTAR",
-    visualDirection(
-      result
-    ),
-    explanation ||
-      "Filtros superados."
-  );
-
-
-  /*
-    Dejamos que la voz anuncie primero
-    qué operación ha sido confirmada.
-  */
-
-  await voiceAssistant
-    .announcePredictionAndExecution(
-      result,
-      explanation
-    );
 
 
   const targetSecond =
@@ -2431,10 +2789,8 @@ async function beginPredictionSequence(
 
 
   /*
-    ESTE ES EL CAMBIO PRINCIPAL.
-
-    El target está DOS SEGUNDOS
-    DELANTE DEL instante actual.
+    FIX13.3:
+    EL TARGET SE CREA ANTES DE LA VOZ.
   */
 
   const targetExecutionAt =
@@ -2444,7 +2800,7 @@ async function beginPredictionSequence(
 
   setText(
     UI.engineStage,
-    "PREAVISO FIX11 AL BOT"
+    "PREAVISO FIX13.3 AL BOT"
   );
 
 
@@ -2454,10 +2810,12 @@ async function beginPredictionSequence(
   );
 
 
-  /*
-    ENVIAR INMEDIATAMENTE.
+  UI.engineProgress.style.width =
+    "90%";
 
-    No esperamos 12 dentro del countdown.
+
+  /*
+    ENVIAMOS PRIMERO.
   */
 
   const enviada =
@@ -2473,12 +2831,12 @@ async function beginPredictionSequence(
   ) {
 
     diagnostics.error(
-      "FIX11: no se pudo transmitir la señal al BOT."
+      "FIX13.3: no se pudo transmitir la señal al BOT."
     );
 
 
     log(
-      "BOT FIX11 → FALLO DE TRANSMISIÓN.",
+      "BOT FIX13.3 → FALLO DE TRANSMISIÓN.",
       "error"
     );
 
@@ -2486,8 +2844,45 @@ async function beginPredictionSequence(
 
 
   /*
-    ESPERAR EXACTAMENTE HASTA
-    targetExecutionAt.
+    VOZ NO BLOQUEANTE.
+
+    IMPORTANTE:
+    NO USAMOS await AQUÍ.
+
+    Aunque la voz dure más,
+    el target no se desplaza.
+  */
+
+  Promise.resolve(
+    voiceAssistant
+      .announcePredictionAndExecution(
+        result,
+        explanation
+      )
+  )
+    .catch(
+      (
+        error
+      ) => {
+
+        diagnostics.error(
+          "FIX13.3: error en anuncio de voz.",
+          {
+            message:
+              error?.message ||
+              String(
+                error
+              )
+          }
+        );
+
+      }
+    );
+
+
+  /*
+    ESPERA HASTA EL MISMO TARGET
+    QUE YA TIENE EL BOT.
   */
 
   const espera =
@@ -2504,12 +2899,10 @@ async function beginPredictionSequence(
 
 
   /*
-    AQUÍ ES DONDE EL CONTADOR
-    DEBE MOSTRAR 10.
-
-    Este instante corresponde
-    al targetExecutionAt enviado
-    al BOT.
+    ESTE INSTANTE DEBE COINCIDIR CON:
+    - CONTADOR 10
+    - TARGET BOT
+    - BUY ENVIADO DEL BOT
   */
 
   setText(
@@ -2520,12 +2913,35 @@ async function beginPredictionSequence(
 
   setText(
     UI.engineDetail,
-    `TARGET ${targetSecond} alcanzado · BOT sincronizado.`
+    `TARGET ${targetSecond} alcanzado · BOT sincronizado FIX13.3.`
   );
 
 
   UI.engineProgress.style.width =
     "100%";
+
+
+  diagnostics.ok(
+    "FIX13.3 TARGET VISUAL ALCANZADO.",
+    {
+
+      targetExecutionAt,
+
+      visualReachedAt:
+        Date.now(),
+
+      desviacionVisualMs:
+        Date.now() -
+        targetExecutionAt
+
+    }
+  );
+
+
+  log(
+    `FIX13.3 → CONTADOR ${targetSecond} EN TARGET.`,
+    "ok"
+  );
 
 
   await runCountdown(
@@ -2554,6 +2970,7 @@ const ENTRY_SETTINGS_KEY =
 
 
 function loadEntrySettings() {
+
   try {
 
     const saved =
@@ -2568,31 +2985,37 @@ function loadEntrySettings() {
     if (
       UI.entryAlertEnabled
     ) {
+
       UI.entryAlertEnabled.checked =
         saved.enabled ??
         true;
+
     }
 
 
     if (
       UI.entryAlertSecond
     ) {
+
       UI.entryAlertSecond.value =
         String(
           saved.second ??
           10
         );
+
     }
 
 
     if (
       UI.entryAlertDelay
     ) {
+
       UI.entryAlertDelay.value =
         String(
           saved.delayMs ??
           0
         );
+
     }
 
   }
@@ -2603,11 +3026,13 @@ function loadEntrySettings() {
 
 
 function saveEntrySettings() {
+
   try {
 
     localStorage.setItem(
       ENTRY_SETTINGS_KEY,
       JSON.stringify({
+
         enabled:
           Boolean(
             UI.entryAlertEnabled
@@ -2627,6 +3052,7 @@ function saveEntrySettings() {
               ?.value ||
             0
           )
+
       })
     );
 
@@ -2642,6 +3068,7 @@ function saveEntrySettings() {
    ========================================== */
 
 async function init() {
+
   await voiceAssistant.init();
 
 
@@ -2677,7 +3104,7 @@ async function init() {
 
 
   diagnostics.ok(
-    `Trading Analyst Pro MR V${APP_VERSION} iniciado. FIX11 TARGET REAL · preaviso ${BOT_PREAVISO_SEGUNDOS.toFixed(1)} s.`
+    `Trading Analyst Pro MR V${APP_VERSION} iniciado. FIX13.3 SYNC · preaviso ${BOT_PREAVISO_SEGUNDOS.toFixed(1)} s.`
   );
 
 
@@ -2708,7 +3135,7 @@ async function init() {
 
 
   log(
-    `Trading Analyst Pro MR V${APP_VERSION} listo · FIX11 TARGET REAL · preaviso ${BOT_PREAVISO_SEGUNDOS.toFixed(1)} s.`,
+    `Trading Analyst Pro MR V${APP_VERSION} listo · FIX13.3 SYNC · preaviso ${BOT_PREAVISO_SEGUNDOS.toFixed(1)} s.`,
     "ok"
   );
 
@@ -2735,6 +3162,7 @@ UI.disconnectButton.addEventListener(
     stopEngine(
       false
     );
+
 
     derivAPI.disconnect();
 
@@ -2782,6 +3210,7 @@ UI.marketSelect.addEventListener(
 
 
     marketBuffer.reset();
+
 
     latencyMonitor.reset();
 
@@ -2838,9 +3267,11 @@ UI.marketSelect.addEventListener(
     if (
       state.connected
     ) {
+
       derivAPI.changeSymbol(
         state.symbol
       );
+
     }
 
 
@@ -2937,7 +3368,9 @@ UI.strategySelect.addEventListener(
       if (
         state.connected
       ) {
+
         derivAPI.requestActiveSymbols();
+
       }
 
     }
@@ -2955,6 +3388,7 @@ UI.strategySelect.addEventListener(
 
 
       marketBuffer.reset();
+
 
       latencyMonitor.reset();
 
@@ -3501,6 +3935,7 @@ derivAPI.on(
 
       marketBuffer.reset();
 
+
       latencyMonitor.reset();
 
 
@@ -3659,3 +4094,9 @@ init()
 
     }
   );
+
+
+/* ==========================================
+   FIN APP.JS
+   FIX13.3 SYNC
+   ========================================== */
