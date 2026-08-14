@@ -1,3 +1,43 @@
+/* ==========================================
+   TRADING ANALYZER
+   APP.JS
+   FIX13.4.2
+
+   SECUENCIA DEFINITIVA:
+
+   1. ANALIZA MERCADO
+   2. CONFIRMA / DESCARTA
+   3. EXPLICACIÓN BREVE
+   4. ENVÍA PREPARAR AL BOT EN SEGUNDO PLANO
+   5. BOT PUEDE SOLICITAR COTIZACIÓN
+   6. VOZ DICE COMPLETA:
+      "Tienes diez segundos para realizar
+       la operación."
+   7. AL TERMINAR LA FRASE:
+      TARGET 10 = AHORA + 1000 ms
+   8. ENVÍA TARGET DEFINITIVO AL BOT
+   9. ESPERA 1000 ms EXACTOS
+  10. COMIENZA:
+      10, 9, 8, 7...
+  11. CADA NÚMERO RESPETA 1 SEGUNDO REAL
+
+   PRONUNCIACIÓN:
+   EVEN  = PAR
+   ODD   = IMPAR
+   RISE  = SUBE
+   FALL  = BAJA
+   OVER  = MÁS
+   UNDER = MENOS
+   MATCH = COINCIDENCIA
+
+   IMPORTANTE:
+   - NO HAY PREAVISO HABLADO DE 9 SEGUNDOS.
+   - EL TRABAJO TÉCNICO DEL BOT ES SILENCIOSO.
+   - EL "10" ES LA REFERENCIA DE CALIBRACIÓN.
+   - PREDICCIONES VIEJAS NO PUEDEN INTERFERIR.
+   ========================================== */
+
+
 import {
   APP_VERSION,
   ENGINE,
@@ -33,48 +73,8 @@ import { marketRegistry } from "./market-registry.js";
 
 
 /* ==========================================
-   TRADING ANALYZER
-   APP.JS
-
-   FIX13.4.1
-   VOZ + TARGET 10 CORREGIDOS
-
-   SECUENCIA:
-
-   1. ANALIZA
-   2. SI NO HAY ENTRADA, TERMINA
-   3. SI HAY ENTRADA, DA EXPLICACIÓN BREVE
-   4. ENVÍA LA SEÑAL AL BOT CON ANTICIPACIÓN
-      TÉCNICA SILENCIOSA
-   5. DICE:
-      "TIENES DIEZ SEGUNDOS PARA
-       REALIZAR LA OPERACIÓN"
-   6. SIN PAUSA LARGA COMIENZA:
-      10, 9, 8, 7...
-   7. CADA NÚMERO USA RELOJ REAL
-   8. EL 10 ES LA REFERENCIA CENTRAL
-      PARA LA CALIBRACIÓN DEL BOT
-
-   PRONUNCIACIÓN:
-   EVEN  -> PAR
-   ODD   -> IMPAR
-   RISE  -> SUBE
-   FALL  -> BAJA
-   OVER  -> MÁS
-   UNDER -> MENOS
-   MATCH -> COINCIDENCIA
-
-   CONSERVA:
-   - BLOQUEO DE PREDICCIONES VIEJAS
-   - DERIV
-   - INDICADORES
-   - ESTADÍSTICAS
-   - CALIBRADOR
-   - DIAGNÓSTICOS
-   - MERCADOS
-   - BRIDGE AL BOT
+   UI
    ========================================== */
-
 
 const $ = (id) =>
   document.getElementById(id);
@@ -88,27 +88,35 @@ const UI = {};
   "engineStatus",
   "memoryStatus",
   "latencyStatus",
+
   "marketSelect",
   "strategySelect",
   "modeSelect",
+
   "connectButton",
   "disconnectButton",
   "engineButton",
   "predictionButton",
+
   "controlMessage",
+
   "marketName",
   "price",
   "tickCount",
   "lastDigit",
   "updateTime",
+
   "digits",
+
   "trend",
   "rsi",
   "momentum",
   "volatility",
+
   "engineStage",
   "engineDetail",
   "engineProgress",
+
   "signalCard",
   "signalState",
   "signalTitle",
@@ -116,28 +124,35 @@ const UI = {};
   "signalScore",
   "signalBar",
   "signalReasons",
+
   "countdown",
+
   "floatingSignal",
   "floatingState",
   "floatingValue",
   "floatingDetail",
+
   "voiceButton",
   "voiceSelect",
   "voiceRate",
   "voiceRateValue",
   "voiceTest",
+
   "diagnosticButton",
   "diagnosticPanel",
   "diagnosticContent",
   "copyDiagnostic",
   "clearDiagnostic",
+
   "activityLog",
   "clearLog",
+
   "statsTests",
   "statsSuccess",
   "statsFailed",
   "statsAccuracy",
   "resetStats",
+
   "calibrationStatus",
   "calibrationSummary",
   "executedSecond",
@@ -145,7 +160,9 @@ const UI = {};
   "saveCalibration",
   "resetCalibration",
   "calibrationTable",
+
   "languageSelect",
+
   "tickerMarketName",
   "tickerConnection",
   "tickerPrice",
@@ -155,20 +172,29 @@ const UI = {};
   "tickerOdd",
   "tickerRises",
   "tickerFalls",
+
   "refreshMarkets",
   "manualMarketSymbol",
   "manualMarketName",
   "manualMarketOneSecond",
   "addManualMarket",
   "marketRegistryMessage",
+
   "entryAlertEnabled",
   "entryAlertSecond",
   "entryAlertDelay",
   "entryFlash",
+
   "appUpdateStatus"
-].forEach((id) => {
-  UI[id] = $(id);
-});
+
+].forEach(
+  (id) => {
+
+    UI[id] =
+      $(id);
+
+  }
+);
 
 
 /* ==========================================
@@ -223,34 +249,36 @@ const state = {
 
 
 /* ==========================================
-   FIX13.4.1
-   TIEMPOS
-
-   EL USUARIO NO ESCUCHA ESTE PREAVISO.
-
-   EL BOT RECIBE LA SEÑAL 2.6 s
-   ANTES DEL TARGET VISUAL.
-
-   0.4 s DESPUÉS COMIENZA LA FRASE:
-
-   "Tienes diez segundos para
-    realizar la operación."
-
-   El objetivo es que al terminar esa
-   frase el número 10 aparezca sin una
-   pausa grande.
-
-   Estos valores NO son todavía la
-   calibración STANDARD / 1S del BUY.
-   Esa calibración permanece en el BOT.
+   FIX13.4.2
+   CONFIGURACIÓN TEMPORAL
    ========================================== */
 
-const ANTICIPACION_BOT_MS =
-  2600;
+/*
+  Cuando termina COMPLETAMENTE la frase:
+
+  "Tienes diez segundos para realizar
+   la operación."
+
+  dejamos exactamente un segundo
+  antes de comenzar el 10.
+*/
+
+const MARGEN_FRASE_A_DIEZ_MS =
+  1000;
 
 
-const FRASE_ANTES_TARGET_MS =
-  2200;
+/*
+  Tiempo máximo razonable que puede
+  utilizar el BOT para preparar
+  una cotización antes del target.
+
+  La preparación empieza ANTES de
+  la frase, por lo que normalmente
+  tendrá varios segundos disponibles.
+*/
+
+const PROTOCOLO_BOT_VERSION =
+  "FIX13.4.2";
 
 
 /* ==========================================
@@ -280,69 +308,29 @@ function sleep(
   ms
 ) {
 
+  const tiempo =
+    Math.max(
+      0,
+      Number(
+        ms
+      ) ||
+      0
+    );
+
+
   return new Promise(
-    (resolve) =>
+    (resolve) => {
+
       setTimeout(
         resolve,
-        Math.max(
-          0,
-          Number(ms) || 0
-        )
-      )
+        tiempo
+      );
+
+    }
   );
 
 }
 
-
-/* ==========================================
-   CONTROL DE PREDICCIÓN FIX13.4
-   ========================================== */
-
-function nuevaPrediccionId() {
-
-  state.predictionRunId +=
-    1;
-
-
-  return state.predictionRunId;
-
-}
-
-
-function prediccionSigueActiva(
-  runId
-) {
-
-  return (
-    state.predictionActive ===
-      true &&
-    state.predictionRunId ===
-      runId
-  );
-
-}
-
-
-function invalidarPrediccionActual() {
-
-  state.predictionRunId +=
-    1;
-
-
-  clearInterval(
-    state.countdownTimer
-  );
-
-
-  state.countdownTimer =
-    null;
-
-}
-
-
-/* ==========================================
-   REGISTRO
-   ========================================== */
 
 function log(
   message,
@@ -387,6 +375,52 @@ function log(
       ?.remove();
 
   }
+
+}
+
+
+/* ==========================================
+   CONTROL DE CICLO DE PREDICCIÓN
+   ========================================== */
+
+function nuevaPrediccionId() {
+
+  state.predictionRunId +=
+    1;
+
+
+  return state.predictionRunId;
+
+}
+
+
+function prediccionSigueActiva(
+  runId
+) {
+
+  return (
+    state.predictionActive ===
+      true &&
+    state.predictionRunId ===
+      runId
+  );
+
+}
+
+
+function invalidarPrediccionActual() {
+
+  state.predictionRunId +=
+    1;
+
+
+  clearInterval(
+    state.countdownTimer
+  );
+
+
+  state.countdownTimer =
+    null;
 
 }
 
@@ -489,7 +523,7 @@ function minimumTicks() {
 
 
 /* ==========================================
-   COMPATIBILIDAD MERCADO
+   COMPATIBILIDAD
    ========================================== */
 
 function marketSupportsStrategy(
@@ -513,10 +547,6 @@ function marketSupportsStrategy(
 
 }
 
-
-/* ==========================================
-   PUEDE PREDECIR
-   ========================================== */
 
 function canPredict() {
 
@@ -1495,7 +1525,6 @@ function processTick(
 
     state.snapshot =
       buildSnapshot({
-
         prices:
           marketBuffer.prices,
 
@@ -1504,7 +1533,6 @@ function processTick(
 
         mode:
           state.mode
-
       });
 
 
@@ -1568,7 +1596,7 @@ function startEngine() {
 
   setText(
     UI.engineDetail,
-    "Los motores preparan oportunidades; no se mostrará ninguna hasta pulsar PREDICTION."
+    "Los motores preparan oportunidades continuamente."
   );
 
 
@@ -1752,7 +1780,7 @@ function stopEngine(
 
 
 /* ==========================================
-   SEÑAL FLOTANTE
+   SEÑAL VISUAL
    ========================================== */
 
 function showFloating(
@@ -1805,10 +1833,6 @@ function hideFloating() {
 
 }
 
-
-/* ==========================================
-   MOTIVOS
-   ========================================== */
 
 function showReasons(
   result
@@ -1869,10 +1893,7 @@ function showReasons(
 
 
 /* ==========================================
-   FIX13.4.1
-   DIRECCIÓN HABLADA
-
-   NO DELETREAR PALABRAS TÉCNICAS.
+   DIRECCIÓN PARA VOZ
    ========================================== */
 
 function direccionParaVoz(
@@ -2047,15 +2068,6 @@ function construirResumenVoz(
       .trim();
 
 
-  /*
-    EVITAMOS REPETIR UNA EXPLICACIÓN
-    DEMASIADO LARGA.
-
-    briefExplanation ya limita
-    normalmente a los dos motivos
-    principales.
-  */
-
   if (
     detalle
   ) {
@@ -2071,7 +2083,7 @@ function construirResumenVoz(
 
 
 /* ==========================================
-   FINALIZAR
+   FINALIZAR PREDICCIÓN
    ========================================== */
 
 function finishPrediction(
@@ -2131,7 +2143,7 @@ function finishPrediction(
 
   setText(
     UI.controlMessage,
-    `${message} Puede cambiar mercado o solicitar otra predicción.`
+    `${message} Puede solicitar otra predicción.`
   );
 
 
@@ -2151,7 +2163,7 @@ function finishPrediction(
 
 
   diagnostics.info(
-    "Predicción finalizada FIX13.4.1.",
+    "Predicción finalizada FIX13.4.2.",
     {
       message,
       runId
@@ -2224,13 +2236,12 @@ const botChannel =
 
 
 /* ==========================================
-   ENVIAR SEÑAL AL BOT
+   DATOS BASE DE LA SEÑAL
    ========================================== */
 
-function enviarSenalAlBot(
+function construirDatosBaseBot(
   result,
-  segundoEntrada,
-  targetVisualAt
+  operacionId
 ) {
 
   const ultimoPrecio =
@@ -2251,48 +2262,9 @@ function enviarSenalAlBot(
       : null;
 
 
-  const visualTarget =
-    Number(
-      targetVisualAt
-    );
+  return {
 
-
-  if (
-    !Number.isFinite(
-      visualTarget
-    ) ||
-    visualTarget <=
-      Date.now()
-  ) {
-
-    diagnostics.error(
-      "FIX13.4.1: targetVisualAt inválido.",
-      {
-        targetVisualAt:
-          visualTarget
-      }
-    );
-
-
-    log(
-      "BOT FIX13.4.1 ERROR → target visual inválido.",
-      "error"
-    );
-
-
-    return false;
-
-  }
-
-
-  const ahoraEpoch =
-    Date.now();
-
-
-  const senal = {
-
-    id:
-      `${ahoraEpoch}-${state.symbol}-${state.strategy}`,
+    operacionId,
 
     mercado:
       state.symbol,
@@ -2312,8 +2284,7 @@ function enviarSenalAlBot(
     precio:
       ultimoPrecio,
 
-    ultimoDigito:
-      ultimoDigito,
+    ultimoDigito,
 
     tendencia:
       state.snapshot
@@ -2338,75 +2309,24 @@ function enviarSenalAlBot(
         ?.level ??
       null,
 
-    segundosEntrada:
-      segundoEntrada,
-
     modo:
       state.mode,
-
-
-    /*
-      COMPATIBILIDAD CON EL BOT ACTUAL.
-
-      POR AHORA targetExecutionAt
-      SIGUE SIENDO EL PUNTO VISUAL 10.
-
-      EL BOT APLICA SU CALIBRACIÓN
-      EN MILISEGUNDOS SOBRE ESTE TARGET.
-    */
-
-    targetExecutionAt:
-      visualTarget,
-
-
-    /*
-      NUEVO NOMBRE MÁS CLARO.
-    */
-
-    targetVisualAt:
-      visualTarget,
-
-
-    analyzerSentEpoch:
-      ahoraEpoch,
-
-    timestamp:
-      ahoraEpoch,
-
-
-    metadata: {
-
-      ...(
-        result.metadata ||
-        {}
-      ),
-
-      targetExecutionAt:
-        visualTarget,
-
-      targetVisualAt:
-        visualTarget,
-
-      analyzerSentEpoch:
-        ahoraEpoch,
-
-      anticipacionTecnicaMs:
-        ANTICIPACION_BOT_MS,
-
-      referenciaEntrada:
-        "INICIO_VISUAL_10",
-
-      fix:
-        "FIX13.4.1"
-
-    },
-
 
     origen:
       `Trading Analyst Pro MR V${APP_VERSION}`
 
   };
 
+}
+
+
+/* ==========================================
+   TRANSMITIR AL BOT
+   ========================================== */
+
+function transmitirAlBot(
+  mensaje
+) {
 
   let broadcastOk =
     false;
@@ -2423,7 +2343,7 @@ function enviarSenalAlBot(
     ) {
 
       botChannel.postMessage(
-        senal
+        mensaje
       );
 
 
@@ -2454,7 +2374,7 @@ function enviarSenalAlBot(
     localStorage.setItem(
       "TA_BOT_SIGNAL_V1",
       JSON.stringify(
-        senal
+        mensaje
       )
     );
 
@@ -2479,48 +2399,289 @@ function enviarSenalAlBot(
   }
 
 
-  const anticipacion =
-    visualTarget -
+  return (
+    broadcastOk ||
+    storageOk
+  );
+
+}
+
+
+/* ==========================================
+   FIX13.4.2
+   FASE 1:
+   PREPARAR BOT
+
+   NO TIENE TARGET TODAVÍA.
+   NO DEBE COMPRAR.
+
+   EL BOT:
+   - TRADUCE CONTRATO
+   - SOLICITA COTIZACIÓN
+   - GUARDA PROPUESTA
+   - QUEDA ESPERANDO TARGET
+   ========================================== */
+
+function enviarPreparacionAlBot(
+  result,
+  operacionId
+) {
+
+  const ahora =
     Date.now();
 
 
-  diagnostics.ok(
-    "Señal FIX13.4.1 enviada al BOT.",
+  const base =
+    construirDatosBaseBot(
+      result,
+      operacionId
+    );
+
+
+  const mensaje = {
+
+    ...base,
+
+    id:
+      `${operacionId}-PREPARE`,
+
+    fase:
+      "PREPARAR",
+
+    protocolo:
+      PROTOCOLO_BOT_VERSION,
+
+    segundosEntrada:
+      10,
+
+    targetExecutionAt:
+      null,
+
+    targetVisualAt:
+      null,
+
+    analyzerSentEpoch:
+      ahora,
+
+    timestamp:
+      ahora,
+
+    metadata: {
+
+      ...(
+        result.metadata ||
+        {}
+      ),
+
+      operacionId,
+
+      fase:
+        "PREPARAR",
+
+      protocolo:
+        PROTOCOLO_BOT_VERSION,
+
+      prepararCotizacion:
+        true,
+
+      ejecutar:
+        false,
+
+      fix:
+        "FIX13.4.2-PREPARE"
+
+    }
+
+  };
+
+
+  const enviada =
+    transmitirAlBot(
+      mensaje
+    );
+
+
+  diagnostics.info(
+    "FIX13.4.2 PREPARAR enviado al BOT.",
     {
+      operacionId,
       mercado:
-        senal.mercado,
-
+        mensaje.mercado,
       direccion:
-        senal.direccion,
-
-      confianza:
-        senal.confianza,
-
-      targetVisualAt:
-        senal.targetVisualAt,
-
-      anticipacionMs:
-        anticipacion,
-
-      BroadcastChannel:
-        broadcastOk,
-
-      localStorage:
-        storageOk
+        mensaje.direccion,
+      enviada
     }
   );
 
 
   log(
-    `BOT FIX13.4.1 → ${senal.mercado} · ${senal.direccion} · TARGET 10 · anticipación ${(anticipacion / 1000).toFixed(2)} s`,
-    "ok"
+    `BOT FIX13.4.2 → PREPARAR ${mensaje.mercado} · ${mensaje.direccion}.`,
+    enviada
+      ? "ok"
+      : "error"
   );
 
 
-  return (
-    broadcastOk ||
-    storageOk
+  return enviada;
+
+}
+
+
+/* ==========================================
+   FIX13.4.2
+   FASE 2:
+   TARGET DEFINITIVO
+
+   SE ENVÍA EXACTAMENTE 1 SEGUNDO
+   ANTES DEL INICIO DEL "10".
+   ========================================== */
+
+function enviarTargetAlBot(
+  result,
+  operacionId,
+  targetVisualAt
+) {
+
+  const target =
+    Number(
+      targetVisualAt
+    );
+
+
+  if (
+    !Number.isFinite(
+      target
+    ) ||
+    target <=
+      Date.now()
+  ) {
+
+    diagnostics.error(
+      "FIX13.4.2 targetVisualAt inválido.",
+      {
+        operacionId,
+        targetVisualAt:
+          target
+      }
+    );
+
+
+    return false;
+
+  }
+
+
+  const ahora =
+    Date.now();
+
+
+  const base =
+    construirDatosBaseBot(
+      result,
+      operacionId
+    );
+
+
+  const mensaje = {
+
+    ...base,
+
+    id:
+      `${operacionId}-TARGET`,
+
+    fase:
+      "EJECUTAR",
+
+    protocolo:
+      PROTOCOLO_BOT_VERSION,
+
+    segundosEntrada:
+      10,
+
+    targetExecutionAt:
+      target,
+
+    targetVisualAt:
+      target,
+
+    analyzerSentEpoch:
+      ahora,
+
+    timestamp:
+      ahora,
+
+    metadata: {
+
+      ...(
+        result.metadata ||
+        {}
+      ),
+
+      operacionId,
+
+      fase:
+        "EJECUTAR",
+
+      protocolo:
+        PROTOCOLO_BOT_VERSION,
+
+      targetExecutionAt:
+        target,
+
+      targetVisualAt:
+        target,
+
+      margenFraseADiezMs:
+        MARGEN_FRASE_A_DIEZ_MS,
+
+      prepararCotizacion:
+        false,
+
+      ejecutar:
+        true,
+
+      referenciaEntrada:
+        "INICIO_10",
+
+      fix:
+        "FIX13.4.2-TARGET"
+
+    }
+
+  };
+
+
+  const enviada =
+    transmitirAlBot(
+      mensaje
+    );
+
+
+  diagnostics.ok(
+    "FIX13.4.2 TARGET enviado al BOT.",
+    {
+      operacionId,
+      mercado:
+        mensaje.mercado,
+      targetVisualAt:
+        target,
+      anticipacionMs:
+        target -
+        Date.now(),
+      enviada
+    }
   );
+
+
+  log(
+    `BOT FIX13.4.2 → TARGET 10 · ${mensaje.mercado} · anticipación ${((target - Date.now()) / 1000).toFixed(3)} s.`,
+    enviada
+      ? "ok"
+      : "error"
+  );
+
+
+  return enviada;
 
 }
 
@@ -2640,17 +2801,6 @@ async function runCountdown(
             1000;
 
 
-          /*
-            floor(elapsed) garantiza:
-
-            0.000 - 0.999 = 10
-            1.000 - 1.999 = 9
-            2.000 - 2.999 = 8
-
-            CADA NÚMERO RESPETA
-            UN SEGUNDO REAL.
-          */
-
           const remaining =
             Math.max(
               0,
@@ -2677,13 +2827,6 @@ async function runCountdown(
               remaining
             );
 
-
-            /*
-              EL RELOJ MANDA.
-
-              LA VOZ NO PUEDE ATRASAR
-              EL CAMBIO DEL NÚMERO.
-            */
 
             try {
 
@@ -2778,24 +2921,8 @@ async function runCountdown(
 
 
 /* ==========================================
-   FIX13.4.1
-   SECUENCIA PRINCIPAL
-
-   CORRECTA:
-
-   PREDICCIÓN
-        ↓
-   EXPLICACIÓN BREVE
-        ↓
-   [BOT RECIBE SEÑAL EN SILENCIO]
-        ↓
-   "TIENES DIEZ SEGUNDOS..."
-        ↓
-   10
-        ↓ 1 SEGUNDO
-   9
-        ↓ 1 SEGUNDO
-   8...
+   FIX13.4.2
+   SECUENCIA DE EJECUCIÓN
    ========================================== */
 
 async function beginPredictionSequence(
@@ -2824,12 +2951,8 @@ async function beginPredictionSequence(
     result;
 
 
-  const targetSecond =
-    Number(
-      UI.entryAlertSecond
-        ?.value ||
-      10
-    );
+  const operacionId =
+    `${Date.now()}-${state.symbol}-${state.strategy}-${runId}`;
 
 
   /* ======================================
@@ -2887,7 +3010,7 @@ async function beginPredictionSequence(
   ) {
 
     diagnostics.info(
-      "FIX13.4.1: explicación de voz incompleta.",
+      "FIX13.4.2 explicación de voz incompleta.",
       {
         message:
           error?.message ||
@@ -2912,44 +3035,21 @@ async function beginPredictionSequence(
 
 
   /* ======================================
-     2. CREAR TARGET 10
+     2. BOT PREPARA EN SEGUNDO PLANO
 
-     NO HAY PREAVISO HABLADO DE 9 s.
+     DESDE AQUÍ EL BOT PUEDE:
+     - CREAR CONTRATO
+     - PEDIR PROPUESTA
+     - GUARDARLA
+     - ESPERAR TARGET
+
+     NO HAY BUY.
      ====================================== */
 
-  const targetVisualAt =
-    Date.now() +
-    ANTICIPACION_BOT_MS;
-
-
-  /* ======================================
-     3. BOT RECIBE LA SEÑAL
-        INMEDIATAMENTE Y EN SILENCIO
-     ====================================== */
-
-  const enviada =
-    enviarSenalAlBot(
-      result,
-      targetSecond,
-      targetVisualAt
-    );
-
-
-  if (
-    !enviada
-  ) {
-
-    diagnostics.error(
-      "FIX13.4.1: no se pudo transmitir la señal al BOT."
-    );
-
-
-    log(
-      "BOT FIX13.4.1 → FALLO DE TRANSMISIÓN.",
-      "error"
-    );
-
-  }
+  enviarPreparacionAlBot(
+    result,
+    operacionId
+  );
 
 
   setText(
@@ -2960,7 +3060,7 @@ async function beginPredictionSequence(
 
   setText(
     UI.engineDetail,
-    `Preparando punto ${targetSecond}.`
+    "Preparación técnica del BOT en segundo plano."
   );
 
 
@@ -2974,25 +3074,55 @@ async function beginPredictionSequence(
   }
 
 
-  /*
-    SOLO ESPERAMOS UNA FRACCIÓN PEQUEÑA.
+  /* ======================================
+     3. FRASE COMPLETA
 
-    EL USUARIO NO ESCUCHA:
-    "TIENES 9 SEGUNDOS".
-  */
+     AQUÍ SÍ ESPERAMOS A QUE TERMINE.
+     ====================================== */
 
-  const fraseAt =
-    targetVisualAt -
-    FRASE_ANTES_TARGET_MS;
+  try {
+
+    const aviso =
+      voiceAssistant.speak(
+        "Tienes diez segundos para realizar la operación.",
+        {
+          replace:
+            true,
+
+          rate:
+            1.05
+        }
+      );
 
 
-  await sleep(
-    Math.max(
-      0,
-      fraseAt -
-      Date.now()
-    )
-  );
+    if (
+      aviso &&
+      typeof aviso.then ===
+        "function"
+    ) {
+
+      await aviso;
+
+    }
+
+  }
+
+  catch (
+    error
+  ) {
+
+    diagnostics.info(
+      "FIX13.4.2 frase de entrada incompleta.",
+      {
+        message:
+          error?.message ||
+          String(
+            error
+          )
+      }
+    );
+
+  }
 
 
   if (
@@ -3007,47 +3137,71 @@ async function beginPredictionSequence(
 
 
   /* ======================================
-     4. FRASE FINAL ANTES DEL 10
+     4. EXACTAMENTE 1 SEGUNDO AL 10
 
-     NO USAMOS await.
-
-     EL TARGET YA ESTÁ FIJADO.
+     ESTE TARGET SE CREA DESPUÉS
+     DE TERMINAR COMPLETAMENTE LA FRASE.
      ====================================== */
 
-  try {
-
-    const aviso =
-      voiceAssistant.speak(
-        "Tienes diez segundos para realizar la operación.",
-        {
-          replace:
-            true,
-
-          rate:
-            1.08
-        }
-      );
+  const fraseFinalizadaAt =
+    Date.now();
 
 
-    if (
-      aviso &&
-      typeof aviso.catch ===
-        "function"
-    ) {
+  const targetVisualAt =
+    fraseFinalizadaAt +
+    MARGEN_FRASE_A_DIEZ_MS;
 
-      aviso.catch(
-        () => {}
-      );
 
+  /*
+    AHORA EL BOT CONOCE EL TARGET REAL.
+
+    TODAVÍA TIENE 1000 ms PARA
+    PROGRAMAR LA EJECUCIÓN.
+
+    STANDARD PODRÁ USAR:
+    target - ajuste negativo.
+
+    1S PODRÁ USAR:
+    target + ajuste positivo.
+  */
+
+  enviarTargetAlBot(
+    result,
+    operacionId,
+    targetVisualAt
+  );
+
+
+  setText(
+    UI.engineStage,
+    "PUNTO 10 PREPARADO"
+  );
+
+
+  setText(
+    UI.engineDetail,
+    "Un segundo para el punto de ejecución."
+  );
+
+
+  diagnostics.ok(
+    "FIX13.4.2 FRASE FINALIZADA.",
+    {
+      operacionId,
+
+      fraseFinalizadaAt,
+
+      targetVisualAt,
+
+      margenMs:
+        targetVisualAt -
+        fraseFinalizadaAt
     }
-
-  }
-
-  catch {}
+  );
 
 
   /* ======================================
-     5. ESPERAR TARGET REAL
+     5. ESPERAR HASTA TARGET
      ====================================== */
 
   await sleep(
@@ -3071,7 +3225,7 @@ async function beginPredictionSequence(
 
 
   /* ======================================
-     6. INICIO EXACTO DEL 10
+     6. INICIO DEL 10
      ====================================== */
 
   const visualReachedAt =
@@ -3091,7 +3245,7 @@ async function beginPredictionSequence(
 
   setText(
     UI.engineDetail,
-    `PUNTO ${targetSecond} · REFERENCIA DE EJECUCIÓN.`
+    "PUNTO 10 · REFERENCIA DE EJECUCIÓN."
   );
 
 
@@ -3106,24 +3260,27 @@ async function beginPredictionSequence(
 
 
   diagnostics.ok(
-    "FIX13.4.1 TARGET 10 ALCANZADO.",
+    "FIX13.4.2 TARGET 10 ALCANZADO.",
     {
-      runId,
+      operacionId,
+
       targetVisualAt,
+
       visualReachedAt,
+
       desviacionVisualMs
     }
   );
 
 
   log(
-    `FIX13.4.1 → 10 ALCANZADO · desviación ${desviacionVisualMs} ms.`,
+    `FIX13.4.2 → 10 ALCANZADO · desviación visual ${desviacionVisualMs} ms.`,
     "ok"
   );
 
 
   /* ======================================
-     7. 10, 9, 8...
+     7. 10 → 9 → 8...
      ====================================== */
 
   await runCountdown(
@@ -3267,13 +3424,16 @@ async function requestPrediction() {
 
 
   diagnostics.info(
-    "Predicción FIX13.4.1 solicitada.",
+    "Predicción FIX13.4.2 solicitada.",
     {
       runId,
+
       symbol:
         state.symbol,
+
       strategy:
         state.strategy,
+
       mode:
         state.mode
     }
@@ -3325,7 +3485,6 @@ async function requestPrediction() {
 
   const freshSnapshot =
     buildSnapshot({
-
       prices:
         marketBuffer.prices,
 
@@ -3334,7 +3493,6 @@ async function requestPrediction() {
 
       mode:
         state.mode
-
     });
 
 
@@ -3364,8 +3522,10 @@ async function requestPrediction() {
     evaluateTiming({
       strategy:
         state.strategy,
+
       snapshot:
         freshSnapshot,
+
       latency:
         state.latency
     });
@@ -3375,9 +3535,12 @@ async function requestPrediction() {
     applyQualityFilter({
       strategy:
         state.strategy,
+
       opportunity:
         first,
+
       consensus,
+
       timing
     });
 
@@ -3571,11 +3734,13 @@ async function requestPrediction() {
 
 
     diagnostics.info(
-      "FIX13.4.1 señal descartada por calidad.",
+      "FIX13.4.2 señal descartada por calidad.",
       {
         runId,
+
         score:
           quality.score,
+
         reason:
           quality.reason
       }
@@ -3668,7 +3833,7 @@ async function requestPrediction() {
 
   setText(
     UI.engineDetail,
-    "Preparando explicación y punto 10."
+    "Preparando explicación y sincronización FIX13.4.2."
   );
 
 
@@ -3713,6 +3878,7 @@ function renderDiagnostics(
 
     UI.diagnosticContent.textContent =
       "Sin eventos.";
+
 
     return;
 
@@ -3772,8 +3938,10 @@ function calibrationContext() {
   return {
     symbol:
       state.symbol,
+
     strategy:
       state.strategy,
+
     mode:
       state.mode
   };
@@ -3853,7 +4021,7 @@ function renderCalibration() {
    ========================================== */
 
 const ENTRY_SETTINGS_KEY =
-  "trading-entry-alert-v13-4-1";
+  "trading-entry-alert-v13-4-2";
 
 
 function loadEntrySettings() {
@@ -3919,7 +4087,6 @@ function saveEntrySettings() {
     localStorage.setItem(
       ENTRY_SETTINGS_KEY,
       JSON.stringify({
-
         enabled:
           Boolean(
             UI.entryAlertEnabled
@@ -3939,7 +4106,6 @@ function saveEntrySettings() {
               ?.value ||
             0
           )
-
       })
     );
 
@@ -4001,7 +4167,7 @@ async function init() {
 
 
   diagnostics.ok(
-    `Trading Analyst Pro MR V${APP_VERSION} iniciado · FIX13.4.1 · TARGET 10.`
+    `Trading Analyst Pro MR V${APP_VERSION} iniciado · FIX13.4.2 · TARGET 10 + PREPARE BOT.`
   );
 
 
@@ -4033,12 +4199,12 @@ async function init() {
 
   setText(
     UI.appUpdateStatus,
-    "FIX13.4.1"
+    "FIX13.4.2"
   );
 
 
   log(
-    `Trading Analyst Pro MR V${APP_VERSION} listo · FIX13.4.1 · TARGET 10.`,
+    `Trading Analyst Pro MR V${APP_VERSION} listo · FIX13.4.2 · TARGET 10.`,
     "ok"
   );
 
@@ -4046,7 +4212,7 @@ async function init() {
 
 
 /* ==========================================
-   BOTONES PRINCIPALES
+   BOTONES
    ========================================== */
 
 UI.connectButton
@@ -4340,8 +4506,8 @@ UI.strategySelect
           marketRegistry.all()[
             state.symbol
           ]?.name ||
-          state.symbol
-      );
+            state.symbol
+        );
 
       }
 
@@ -4711,7 +4877,7 @@ UI.resetCalibration
 
 
 /* ==========================================
-   AJUSTES DE ENTRADA
+   AJUSTES ENTRADA
    ========================================== */
 
 UI.entryAlertEnabled
@@ -4822,7 +4988,6 @@ UI.addManualMarket
       try {
 
         marketRegistry.addManual({
-
           symbol:
             UI.manualMarketSymbol.value,
 
@@ -4831,7 +4996,6 @@ UI.addManualMarket
 
           oneSecond:
             UI.manualMarketOneSecond.checked
-
         });
 
 
@@ -5068,12 +5232,14 @@ init()
     ) => {
 
       diagnostics.error(
-        "Error durante init() FIX13.4.1.",
+        "Error durante init() FIX13.4.2.",
         {
           name:
             error.name,
+
           message:
             error.message,
+
           stack:
             error.stack
         }
@@ -5085,5 +5251,5 @@ init()
 
 /* ==========================================
    FIN APP.JS
-   FIX13.4.1
+   FIX13.4.2
    ========================================== */
