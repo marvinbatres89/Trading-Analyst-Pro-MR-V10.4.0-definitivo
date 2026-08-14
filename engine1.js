@@ -1,0 +1,510 @@
+/* ==========================================
+   TRADING ANALYZER
+   ENGINE1.JS
+   FIX13.6 - BALANCE DE FILTROS
+   ========================================== */
+
+const clamp = (value, min, max) =>
+  Math.max(min, Math.min(max, Number(value) || 0));
+
+function output(strategy, direction, score, reasons, warnings = [], metadata = {}) {
+  return {
+    source: "ENGINE_1",
+    strategy,
+    direction,
+    score: Math.round(clamp(score, 0, 100)),
+    reasons,
+    warnings,
+    metadata,
+    createdAt: Date.now()
+  };
+}
+
+function withSnapshotMark(result, snapshot) {
+  return {
+    ...result,
+    metadata: {
+      ...(result.metadata || {}),
+      snapshotMark: snapshot?.snapshotMark
+        ? { ...snapshot.snapshotMark }
+        : null
+    }
+  };
+}
+
+function riseFall(snapshot) {
+  let bullish = 0;
+  let bearish = 0;
+  const upReasons = [];
+  const downReasons = [];
+  const warnings = [];
+
+  if (snapshot.trend.direction === "BULLISH") {
+    bullish += 22 + snapshot.trend.strength * 3;
+    upReasons.push("Tendencia principal alcista.");
+  }
+
+  if (snapshot.trend.direction === "BEARISH") {
+    bearish += 22 + snapshot.trend.strength * 3;
+    downReasons.push("Tendencia principal bajista.");
+  }
+
+  if (snapshot.momentum.direction === "POSITIVE") {
+    bullish += 14 + snapshot.momentum.strength * 2;
+    upReasons.push("Momentum positivo.");
+  }
+
+  if (snapshot.momentum.direction === "NEGATIVE") {
+    bearish += 14 + snapshot.momentum.strength * 2;
+    downReasons.push("Momentum negativo.");
+  }
+
+  if (snapshot.shortFlow.direction === "BULLISH") {
+    bullish += 14 + snapshot.shortFlow.strength * 2;
+    upReasons.push("Flujo corto alcista.");
+  }
+
+  if (snapshot.shortFlow.direction === "BEARISH") {
+    bearish += 14 + snapshot.shortFlow.strength * 2;
+    downReasons.push("Flujo corto bajista.");
+  }
+
+  if (snapshot.mediumFlow.direction === "BULLISH") bullish += 6;
+  if (snapshot.mediumFlow.direction === "BEARISH") bearish += 6;
+  if (snapshot.rsiState === "BULLISH") bullish += 7;
+  if (snapshot.rsiState === "BEARISH") bearish += 7;
+
+  if (
+    snapshot.alignment?.dominant === "BULLISH" &&
+    snapshot.alignment?.agreement >= 4
+  ) {
+    bullish += 6;
+    upReasons.push("Alineación amplia de indicadores.");
+  }
+
+  if (
+    snapshot.alignment?.dominant === "BEARISH" &&
+    snapshot.alignment?.agreement >= 4
+  ) {
+    bearish += 6;
+    downReasons.push("Alineación amplia de indicadores.");
+  }
+
+  if (snapshot.alignment?.conflicting) {
+    bullish -= 8;
+    bearish -= 8;
+    warnings.push("Los indicadores muestran conflicto interno.");
+  }
+
+  if (snapshot.lateral) {
+    bullish -= 12;
+    bearish -= 12;
+    warnings.push("Mercado lateral.");
+  }
+
+  if (snapshot.volatility.level === "VERY HIGH") {
+    bullish -= 15;
+    bearish -= 15;
+    warnings.push("Volatilidad extrema.");
+  }
+
+  const direction = bullish >= bearish ? "RISE" : "FALL";
+  const score = Math.max(bullish, bearish);
+  const difference = Math.abs(bullish - bearish);
+
+  const approvedCandidate =
+    difference >= 10 &&
+    !snapshot.lateral &&
+    snapshot.volatility.level !== "VERY HIGH" &&
+    !snapshot.alignment?.conflicting;
+
+  return output(
+    "rise_fall",
+    approvedCandidate ? direction : "WAIT",
+    approvedCandidate ? score : score - 8,
+    direction === "RISE" ? upReasons : downReasons,
+    warnings,
+    {
+      difference,
+      alignment: snapshot.alignment,
+      volatilityLevel: snapshot.volatility.level,
+      lateral: snapshot.lateral
+    }
+  );
+}
+
+function digitBinary(strategy, snapshot) {
+  const short = snapshot.digits.short;
+  const medium = snapshot.digits.medium;
+  const long = snapshot.digits.long;
+
+  /*
+    FIX13.6:
+    60 dígitos largos en vez de 80.
+    Sigue existiendo contexto largo, pero
+    no obliga a esperar tanto para cada arranque.
+  */
+  if (short.count < 20 || medium.count < 40 || long.count < 60) {
+    return output(
+      strategy,
+      "WAIT",
+      0,
+      [`Recopilando dígitos: ${short.count}/20 · ${medium.count}/40 · ${long.count}/60.`]
+    );
+  }
+
+  let shortA, shortB, mediumA, mediumB, longA, longB, direction, labelA, labelB;
+
+  if (strategy === "even_odd") {
+    shortA = short.evenPercent;
+    shortB = short.oddPercent;
+    mediumA = medium.evenPercent;
+    mediumB = medium.oddPercent;
+    longA = long.evenPercent;
+    longB = long.oddPercent;
+    direction = shortA >= shortB ? "EVEN" : "ODD";
+    labelA = "pares";
+    labelB = "impares";
+  } else {
+    shortA = short.highPercent;
+    shortB = short.lowPercent;
+    mediumA = medium.highPercent;
+    mediumB = medium.lowPercent;
+    longA = long.highPercent;
+    longB = long.lowPercent;
+    direction = shortA >= shortB ? "OVER" : "UNDER";
+    labelA = "altos";
+    labelB = "bajos";
+  }
+
+  const shortDiff = Math.abs(shortA - shortB);
+  const mediumDiff = Math.abs(mediumA - mediumB);
+  const longDiff = Math.abs(longA - longB);
+
+  const shortSideA = shortA >= shortB;
+  const mediumSideA = mediumA >= mediumB;
+  const longSideA = longA >= longB;
+
+  const agreement =
+    1 +
+    Number(shortSideA === mediumSideA) +
+    Number(shortSideA === longSideA);
+
+  /*
+    FIX13.6:
+    Seguimos exigiendo 3/3 ventanas,
+    pero bajamos diferencias mínimas a:
+    corto 8, medio 4, largo 2.
+  */
+  const stable =
+    agreement === 3 &&
+    shortDiff >= 8 &&
+    mediumDiff >= 4 &&
+    longDiff >= 2;
+
+  let score =
+    50 +
+    Math.min(22, shortDiff * 0.9) +
+    Math.min(12, mediumDiff * 0.45) +
+    Math.min(7, longDiff * 0.2) +
+    (agreement === 3 ? 8 : agreement === 2 ? 2 : -8);
+
+  if (shortDiff < 6) score -= 10;
+  if (agreement < 3) score -= 8;
+
+  score = Math.min(90, clamp(score, 0, 100));
+
+  return output(
+    strategy,
+    stable ? direction : "WAIT",
+    score,
+    [
+      `Ventana corta: ${shortDiff.toFixed(1)}% de diferencia.`,
+      `Ventana media: ${mediumDiff.toFixed(1)}% de diferencia.`,
+      `Ventana larga: ${longDiff.toFixed(1)}% de diferencia.`,
+      `Coincidencia entre ventanas: ${agreement}/3 (${labelA} frente a ${labelB}).`
+    ],
+    ["La distribución histórica no garantiza el siguiente dígito."],
+    {
+      shortDiff,
+      mediumDiff,
+      longDiff,
+      agreement,
+      stable
+    }
+  );
+}
+
+function median(values) {
+  if (!values.length) return 0;
+  const sorted = values.slice().sort((a, b) => a - b);
+  const mid = Math.floor(sorted.length / 2);
+  return sorted.length % 2
+    ? sorted[mid]
+    : (sorted[mid - 1] + sorted[mid]) / 2;
+}
+
+function spikeWatch(strategy, snapshot) {
+  const prices = snapshot.rawPrices || [];
+
+  if (prices.length < 45) {
+    return output(
+      strategy,
+      "WAIT",
+      0,
+      [`Recopilando precios para ${strategy === "boom" ? "Boom" : "Crash"}: ${prices.length}/45.`],
+      ["Motor experimental de contexto previo a picos."]
+    );
+  }
+
+  const sample = prices.slice(-45);
+  const deltas = [];
+
+  for (let i = 1; i < sample.length; i += 1) {
+    deltas.push(sample[i] - sample[i - 1]);
+  }
+
+  const absDeltas = deltas.map((v) => Math.abs(v));
+  const typical = Math.max(median(absDeltas), 1e-12);
+  const spikeLimit = typical * 4.5;
+  const recent = deltas.slice(-12);
+  const spikeDirection = strategy === "boom" ? 1 : -1;
+
+  let lastSpike = -1;
+
+  recent.forEach((delta, index) => {
+    if (
+      Math.sign(delta) === spikeDirection &&
+      Math.abs(delta) >= spikeLimit
+    ) {
+      lastSpike = index;
+    }
+  });
+
+  const ticksSinceSpike =
+    lastSpike < 0
+      ? 12
+      : recent.length - 1 - lastSpike;
+
+  const driftMatches =
+    strategy === "boom"
+      ? ["BEARISH", "LATERAL"].includes(snapshot.trend.direction)
+      : ["BULLISH", "LATERAL"].includes(snapshot.trend.direction);
+
+  const momentumMatches =
+    strategy === "boom"
+      ? ["NEGATIVE", "NEUTRAL"].includes(snapshot.momentum.direction)
+      : ["POSITIVE", "NEUTRAL"].includes(snapshot.momentum.direction);
+
+  const flowMatches =
+    strategy === "boom"
+      ? ["BEARISH", "NEUTRAL"].includes(snapshot.shortFlow.direction)
+      : ["BULLISH", "NEUTRAL"].includes(snapshot.shortFlow.direction);
+
+  const quietContext =
+    ["LOW", "MEDIUM"].includes(snapshot.volatility.level);
+
+  const expectedSign = strategy === "boom" ? -1 : 1;
+
+  const stableRun =
+    recent.filter(
+      (delta) =>
+        Math.sign(delta) === expectedSign
+    ).length;
+
+  let score = 48;
+  const reasons = [];
+  const warnings = [
+    "Boom/Crash es experimental: el momento exacto del pico no puede garantizarse.",
+    "La señal evalúa contexto reciente, no certeza del siguiente tick."
+  ];
+
+  if (driftMatches) {
+    score += 10;
+    reasons.push("Tendencia compatible con la fase previa buscada.");
+  }
+
+  if (momentumMatches) {
+    score += 9;
+    reasons.push("Momentum compatible con el contexto.");
+  }
+
+  if (flowMatches) {
+    score += 8;
+    reasons.push("Flujo corto compatible con la estrategia.");
+  }
+
+  if (quietContext) {
+    score += 8;
+    reasons.push("Volatilidad reciente contenida.");
+  }
+
+  if (ticksSinceSpike >= 6) {
+    score += 9;
+    reasons.push(`Sin pico dominante en los últimos ${ticksSinceSpike} ticks observados.`);
+  } else {
+    score -= 16;
+    warnings.push("Se detectó un pico reciente; se aplica enfriamiento.");
+  }
+
+  if (stableRun >= 7) {
+    score += 7;
+    reasons.push(`Secuencia reciente consistente: ${stableRun}/12 movimientos compatibles.`);
+  }
+
+  score = clamp(score, 0, 100);
+
+  const approved =
+    driftMatches &&
+    momentumMatches &&
+    flowMatches &&
+    ticksSinceSpike >= 5 &&
+    score >= 76;
+
+  return output(
+    strategy,
+    approved ? (strategy === "boom" ? "BOOM" : "CRASH") : "WAIT",
+    score,
+    reasons.length ? reasons : ["Contexto todavía insuficiente."],
+    warnings,
+    { ticksSinceSpike, typicalMovement: typical, spikeLimit, stableRun }
+  );
+}
+
+function matches(snapshot) {
+  const short = snapshot.digits.short;
+  const medium = snapshot.digits.medium;
+  const long = snapshot.digits.long;
+
+  if (short.count < 20 || medium.count < 40 || long.count < 60) {
+    return output(
+      "match",
+      "WAIT",
+      0,
+      [`Recopilando dígitos para Matches: ${short.count}/20 · ${medium.count}/40 · ${long.count}/60.`]
+    );
+  }
+
+  const recentDigits = snapshot.rawDigits?.slice(-10) || [];
+  const recentFrequency = Array(10).fill(0);
+
+  recentDigits.forEach((digit) => {
+    if (Number.isInteger(digit) && digit >= 0 && digit <= 9) {
+      recentFrequency[digit] += 1;
+    }
+  });
+
+  const scores = Array(10).fill(0);
+
+  for (let digit = 0; digit <= 9; digit += 1) {
+    const shortRate = short.frequency[digit] / Math.max(1, short.count);
+    const mediumRate = medium.frequency[digit] / Math.max(1, medium.count);
+    const longRate = long.frequency[digit] / Math.max(1, long.count);
+    const recentRate = recentFrequency[digit] / Math.max(1, recentDigits.length || 1);
+
+    scores[digit] =
+      shortRate * 42 +
+      mediumRate * 30 +
+      longRate * 13 +
+      recentRate * 15;
+  }
+
+  const ranked =
+    scores
+      .map((score, digit) => ({ digit, score }))
+      .sort((a, b) => b.score - a.score);
+
+  const first = ranked[0];
+  const second = ranked[1];
+  const separation = first.score - second.score;
+
+  if (first.digit === 0) {
+    return output(
+      "match",
+      "NO_OPERAR",
+      0,
+      ["El número 0 es el candidato dominante."],
+      ["Regla del proyecto: 0 = NO OPERAR."],
+      { digit: 0, separation }
+    );
+  }
+
+  const leaderVotes =
+    [short.hotDigit, medium.hotDigit, long.hotDigit]
+      .filter((digit) => digit === first.digit)
+      .length;
+
+  const recentHits =
+    recentFrequency[first.digit] || 0;
+
+  /*
+    FIX13.6:
+    Match se mantiene exigente, pero permite
+    2/3 líderes si la ventana corta coincide
+    y existe presencia reciente suficiente.
+  */
+  const support =
+    leaderVotes >= 2 &&
+    short.hotDigit === first.digit &&
+    recentHits >= 2;
+
+  let score =
+    52 +
+    Math.min(14, separation * 6) +
+    Math.min(12, Math.max(0, first.score - 9.5) * 2.5) +
+    (leaderVotes >= 2 ? 7 : 0) +
+    (recentHits >= 2 ? 5 : 0);
+
+  score = Math.min(90, clamp(score, 0, 100));
+
+  const approved =
+    support &&
+    separation >= 0.9 &&
+    first.score >= 10.5 &&
+    score >= 78;
+
+  return output(
+    "match",
+    approved ? "MATCH" : "WAIT",
+    score,
+    [
+      `Candidato ${first.digit}: frecuencia combinada ${first.score.toFixed(2)}%.`,
+      `Separación frente al segundo candidato: ${separation.toFixed(2)} puntos.`,
+      `Confirmación de ventanas: ${leaderVotes}/3; presencia reciente: ${recentHits}/10.`
+    ],
+    [
+      "Matches sigue siendo experimental.",
+      "La frecuencia pasada no garantiza el siguiente dígito."
+    ],
+    {
+      digit: first.digit,
+      separation,
+      combinedFrequency: first.score,
+      leaderVotes,
+      recentHits,
+      support
+    }
+  );
+}
+
+export function exploreOpportunity(strategy, snapshot) {
+  if (!snapshot) {
+    return output(strategy, "WAIT", 0, ["Sin análisis."]);
+  }
+
+  let result;
+
+  if (strategy === "rise_fall") {
+    result = riseFall(snapshot);
+  } else if (strategy === "even_odd") {
+    result = digitBinary("even_odd", snapshot);
+  } else if (strategy === "over_under") {
+    result = digitBinary("over_under", snapshot);
+  } else if (strategy === "boom" || strategy === "crash") {
+    result = spikeWatch(strategy, snapshot);
+  } else {
+    result = matches(snapshot);
+  }
+
+  return withSnapshotMark(result, snapshot);
+}
