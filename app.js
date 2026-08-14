@@ -18,13 +18,50 @@ import { applyQualityFilter } from "./quality-filter.js";
 import { statistics } from "./statistics.js";
 import { memoryManager } from "./memory-manager.js";
 import { voiceAssistant } from "./voice.js";
+
 import {
   visualDirection,
   briefExplanation
 } from "./prediction.js";
-import { executionCalibrator } from "./execution-calibrator.js";
+
+import {
+  executionCalibrator
+} from "./execution-calibrator.js";
+
 import { i18n } from "./i18n.js";
 import { marketRegistry } from "./market-registry.js";
+
+
+/* ==========================================
+   TRADING ANALYZER
+   APP.JS
+
+   FIX13.4
+
+   CORRIGE:
+   - PREDICCIONES VIEJAS SOLAPADAS
+   - ESPERAR NO PUEDE CONVERTIRSE DESPUÉS
+     EN EJECUTAR
+   - CADA PREDICCIÓN TIENE ID PROPIO
+   - TARGET VISUAL SEPARADO
+   - PREAVISO REAL DE 9 SEGUNDOS
+   - VENTANA REAL DE 10 SEGUNDOS
+   - CONTADOR 10 → 0 CON RELOJ INDEPENDIENTE
+   - VOZ NO CONTROLA EL RELOJ
+   - PREPARADO PARA TARGET BUY DIFERENTE
+     POR MERCADO EN EL BOT
+
+   CONSERVA:
+   - DERIV
+   - INDICADORES
+   - ESTRATEGIAS
+   - ESTADÍSTICAS
+   - CALIBRADOR
+   - DIAGNÓSTICOS
+   - VOZ
+   - MERCADOS
+   - BOT BRIDGE
+   ========================================== */
 
 
 const $ = (id) =>
@@ -33,32 +70,41 @@ const $ = (id) =>
 
 const UI = {};
 
+
 [
   "connectionStatus",
   "engineStatus",
   "memoryStatus",
   "latencyStatus",
+
   "marketSelect",
   "strategySelect",
   "modeSelect",
+
   "connectButton",
   "disconnectButton",
   "engineButton",
   "predictionButton",
+
   "controlMessage",
+
   "marketName",
   "price",
   "tickCount",
   "lastDigit",
   "updateTime",
+
   "digits",
+
   "trend",
   "rsi",
   "momentum",
   "volatility",
+
   "engineStage",
   "engineDetail",
   "engineProgress",
+
   "signalCard",
   "signalState",
   "signalTitle",
@@ -66,28 +112,35 @@ const UI = {};
   "signalScore",
   "signalBar",
   "signalReasons",
+
   "countdown",
+
   "floatingSignal",
   "floatingState",
   "floatingValue",
   "floatingDetail",
+
   "voiceButton",
   "voiceSelect",
   "voiceRate",
   "voiceRateValue",
   "voiceTest",
+
   "diagnosticButton",
   "diagnosticPanel",
   "diagnosticContent",
   "copyDiagnostic",
   "clearDiagnostic",
+
   "activityLog",
   "clearLog",
+
   "statsTests",
   "statsSuccess",
   "statsFailed",
   "statsAccuracy",
   "resetStats",
+
   "calibrationStatus",
   "calibrationSummary",
   "executedSecond",
@@ -95,7 +148,9 @@ const UI = {};
   "saveCalibration",
   "resetCalibration",
   "calibrationTable",
+
   "languageSelect",
+
   "tickerMarketName",
   "tickerConnection",
   "tickerPrice",
@@ -105,59 +160,139 @@ const UI = {};
   "tickerOdd",
   "tickerRises",
   "tickerFalls",
+
   "refreshMarkets",
   "manualMarketSymbol",
   "manualMarketName",
   "manualMarketOneSecond",
   "addManualMarket",
   "marketRegistryMessage",
+
   "entryAlertEnabled",
   "entryAlertSecond",
   "entryAlertDelay",
   "entryFlash",
-  "appUpdateStatus"
-].forEach((id) => {
-  UI[id] = $(id);
-});
 
+  "appUpdateStatus"
+
+].forEach(
+  (id) => {
+
+    UI[id] =
+      $(id);
+
+  }
+);
+
+
+/* ==========================================
+   ESTADO
+   ========================================== */
 
 const state = {
-  connected: false,
-  engineOn: false,
-  predictionActive: false,
-  cooldown: false,
-  symbol: "1HZ100V",
-  strategy: "rise_fall",
-  mode: "fast",
-  snapshot: null,
-  lastOpportunity: null,
-  latency: latencyMonitor.current,
-  countdownTimer: null,
-  cooldownTimer: null,
-  lastPredictionResult: null
+
+  connected:
+    false,
+
+  engineOn:
+    false,
+
+  predictionActive:
+    false,
+
+  cooldown:
+    false,
+
+  symbol:
+    "1HZ100V",
+
+  strategy:
+    "rise_fall",
+
+  mode:
+    "fast",
+
+  snapshot:
+    null,
+
+  lastOpportunity:
+    null,
+
+  latency:
+    latencyMonitor.current,
+
+  countdownTimer:
+    null,
+
+  cooldownTimer:
+    null,
+
+  lastPredictionResult:
+    null,
+
+
+  /*
+    FIX13.4
+
+    Cada predicción nueva aumenta este ID.
+
+    Si una función antigua continúa viva
+    después de un await, ya no podrá
+    modificar la predicción actual.
+  */
+
+  predictionRunId:
+    0
+
 };
 
 
 /* ==========================================
-   FIX13.3
-   SINCRONIZACIÓN VISUAL + BOT
-
-   OBJETIVO:
-
-   1. SEÑAL CONFIRMADA
-   2. TARGET SE CREA INMEDIATAMENTE
-   3. SE ENVÍA AL BOT INMEDIATAMENTE
-   4. LA VOZ YA NO BLOQUEA EL TARGET
-   5. AL LLEGAR AL TARGET COMIENZA EL 10
-   6. BOT Y CONTADOR COMPARTEN EL MISMO TARGET
+   FIX13.4
+   TIEMPOS PRINCIPALES
    ========================================== */
 
+/*
+  PREPARACIÓN:
+
+  Después de confirmar y explicar
+  brevemente la señal, existen
+  9 segundos de preparación.
+
+  La herramienta manda inmediatamente
+  la señal al BOT.
+
+  Luego llegamos al TARGET VISUAL,
+  donde aparece exactamente:
+
+  10
+
+  y comienza la ventana:
+  10, 9, 8, 7...
+*/
+
 const BOT_PREAVISO_SEGUNDOS =
-  2.0;
+  9;
+
 
 const BOT_PREAVISO_MS =
   BOT_PREAVISO_SEGUNDOS *
   1000;
+
+
+/*
+  Antes de llegar al TARGET VISUAL
+  se anuncia:
+
+  "Tienes diez segundos para hacer
+   la operación."
+
+  El contador no espera a que termine
+  la voz.
+*/
+
+const AVISO_VENTANA_ANTES_MS =
+  1400;
 
 
 /* ==========================================
@@ -182,6 +317,104 @@ function setText(
 
 }
 
+
+function sleep(
+  ms
+) {
+
+  const tiempo =
+    Math.max(
+      0,
+      Number(
+        ms
+      ) ||
+      0
+    );
+
+
+  return new Promise(
+    (resolve) => {
+
+      setTimeout(
+        resolve,
+        tiempo
+      );
+
+    }
+  );
+
+}
+
+
+function ahoraPreciso() {
+
+  if (
+    typeof performance !==
+      "undefined" &&
+    typeof performance.now ===
+      "function"
+  ) {
+
+    return performance.now();
+
+  }
+
+
+  return Date.now();
+
+}
+
+
+/* ==========================================
+   FIX13.4
+   CONTROL DE PREDICCIÓN ACTUAL
+   ========================================== */
+
+function nuevaPrediccionId() {
+
+  state.predictionRunId +=
+    1;
+
+
+  return state.predictionRunId;
+
+}
+
+
+function prediccionSigueActiva(
+  runId
+) {
+
+  return (
+    state.predictionActive ===
+      true &&
+    state.predictionRunId ===
+      runId
+  );
+
+}
+
+
+function invalidarPrediccionActual() {
+
+  state.predictionRunId +=
+    1;
+
+
+  clearInterval(
+    state.countdownTimer
+  );
+
+
+  state.countdownTimer =
+    null;
+
+}
+
+
+/* ==========================================
+   REGISTRO
+   ========================================== */
 
 function log(
   message,
@@ -230,6 +463,10 @@ function log(
 }
 
 
+/* ==========================================
+   ESTADÍSTICAS
+   ========================================== */
+
 function statsKey() {
 
   return [
@@ -254,7 +491,8 @@ function renderStats() {
       ? (
           value.success /
           value.tests
-        ) * 100
+        ) *
+        100
       : null;
 
 
@@ -286,6 +524,10 @@ function renderStats() {
 
 }
 
+
+/* ==========================================
+   TICKS MÍNIMOS
+   ========================================== */
 
 function minimumTicks() {
 
@@ -319,6 +561,10 @@ function minimumTicks() {
 }
 
 
+/* ==========================================
+   COMPATIBILIDAD MERCADO
+   ========================================== */
+
 function marketSupportsStrategy(
   symbol = state.symbol,
   strategy = state.strategy
@@ -340,6 +586,10 @@ function marketSupportsStrategy(
 
 }
 
+
+/* ==========================================
+   PUEDE PREDECIR
+   ========================================== */
 
 function canPredict() {
 
@@ -371,40 +621,64 @@ function renderControls() {
   );
 
 
-  UI.engineButton.textContent =
-    state.engineOn
-      ? i18n.t(
-          "stopEngine"
-        )
-      : i18n.t(
-          "startEngine"
-        );
+  if (
+    UI.engineButton
+  ) {
+
+    UI.engineButton.textContent =
+      state.engineOn
+        ? i18n.t(
+            "stopEngine"
+          )
+        : i18n.t(
+            "startEngine"
+          );
+
+  }
 
 
-  UI.connectButton.textContent =
-    i18n.t(
-      "connect"
-    );
+  if (
+    UI.connectButton
+  ) {
+
+    UI.connectButton.textContent =
+      i18n.t(
+        "connect"
+      );
+
+  }
 
 
-  UI.disconnectButton.textContent =
-    i18n.t(
-      "disconnect"
-    );
+  if (
+    UI.disconnectButton
+  ) {
+
+    UI.disconnectButton.textContent =
+      i18n.t(
+        "disconnect"
+      );
+
+  }
 
 
-  UI.predictionButton.disabled =
-    !canPredict();
+  if (
+    UI.predictionButton
+  ) {
+
+    UI.predictionButton.disabled =
+      !canPredict();
 
 
-  UI.predictionButton.textContent =
-    state.cooldown
-      ? i18n.t(
-          "waitButton"
-        )
-      : i18n.t(
-          "prediction"
-        );
+    UI.predictionButton.textContent =
+      state.cooldown
+        ? i18n.t(
+            "waitButton"
+          )
+        : i18n.t(
+            "prediction"
+          );
+
+  }
 
 
   const locked =
@@ -419,8 +693,14 @@ function renderControls() {
   ].forEach(
     (element) => {
 
-      element.disabled =
-        locked;
+      if (
+        element
+      ) {
+
+        element.disabled =
+          locked;
+
+      }
 
     }
   );
@@ -448,21 +728,39 @@ function renderConnection(
   );
 
 
-  UI.connectButton.disabled =
-    status ===
-      "connecting" ||
-    status ===
+  if (
+    UI.connectButton
+  ) {
+
+    UI.connectButton.disabled =
+      status ===
+        "connecting" ||
+      status ===
+        "live";
+
+  }
+
+
+  if (
+    UI.disconnectButton
+  ) {
+
+    UI.disconnectButton.disabled =
+      status !==
       "live";
 
-
-  UI.disconnectButton.disabled =
-    status !==
-    "live";
+  }
 
 
-  UI.engineButton.disabled =
-    status !==
-    "live";
+  if (
+    UI.engineButton
+  ) {
+
+    UI.engineButton.disabled =
+      status !==
+      "live";
+
+  }
 
 
   if (
@@ -503,15 +801,21 @@ function renderLatency() {
   );
 
 
-  UI.latencyStatus.className =
-    `status-pill ${
-      value.operable
-        ? "live"
-        : value.status ===
-            "NO OPERAR"
-          ? "danger-pill"
-          : ""
-    }`;
+  if (
+    UI.latencyStatus
+  ) {
+
+    UI.latencyStatus.className =
+      `status-pill ${
+        value.operable
+          ? "live"
+          : value.status ===
+              "NO OPERAR"
+            ? "danger-pill"
+            : ""
+      }`;
+
+  }
 
 }
 
@@ -521,6 +825,15 @@ function renderLatency() {
    ========================================== */
 
 function renderDigits() {
+
+  if (
+    !UI.digits
+  ) {
+
+    return;
+
+  }
+
 
   UI.digits.innerHTML =
     "";
@@ -574,6 +887,15 @@ function renderDigits() {
 function renderIndicators(
   snapshot
 ) {
+
+  if (
+    !snapshot
+  ) {
+
+    return;
+
+  }
+
 
   setText(
     UI.trend,
@@ -697,6 +1019,15 @@ function renderLanguage() {
    ========================================== */
 
 function populateMarketSelector() {
+
+  if (
+    !UI.marketSelect
+  ) {
+
+    return false;
+
+  }
+
 
   const previous =
     state.symbol;
@@ -1022,48 +1353,54 @@ function renderTicker() {
       );
 
 
-  UI.tickerDigits.innerHTML =
-    "";
+  if (
+    UI.tickerDigits
+  ) {
+
+    UI.tickerDigits.innerHTML =
+      "";
 
 
-  digits.forEach(
-    (
-      digit,
-      index
-    ) => {
+    digits.forEach(
+      (
+        digit,
+        index
+      ) => {
 
-      const node =
-        document.createElement(
-          "span"
+        const node =
+          document.createElement(
+            "span"
+          );
+
+
+        node.className =
+          `ticker-digit ${
+            digit %
+              2 ===
+            0
+              ? "even"
+              : "odd"
+          }${
+            index ===
+              digits.length -
+                1
+              ? " current"
+              : ""
+          }`;
+
+
+        node.textContent =
+          digit;
+
+
+        UI.tickerDigits.appendChild(
+          node
         );
 
+      }
+    );
 
-      node.className =
-        `ticker-digit ${
-          digit %
-            2 ===
-          0
-            ? "even"
-            : "odd"
-        }${
-          index ===
-            digits.length -
-              1
-            ? " current"
-            : ""
-        }`;
-
-
-      node.textContent =
-        digit;
-
-
-      UI.tickerDigits.appendChild(
-        node
-      );
-
-    }
-  );
+  }
 
 
   const even =
@@ -1235,6 +1572,7 @@ function processTick(
 
     state.snapshot =
       buildSnapshot({
+
         prices:
           marketBuffer.prices,
 
@@ -1243,6 +1581,7 @@ function processTick(
 
         mode:
           state.mode
+
       });
 
 
@@ -1310,8 +1649,14 @@ function startEngine() {
   );
 
 
-  UI.engineProgress.style.width =
-    "25%";
+  if (
+    UI.engineProgress
+  ) {
+
+    UI.engineProgress.style.width =
+      "25%";
+
+  }
 
 
   voiceAssistant.speak(
@@ -1324,18 +1669,24 @@ function startEngine() {
       STRATEGIES[
         state.strategy
       ].voice
-    }.`
+    }.`,
+    {
+      replace:
+        true
+    }
   );
 
 
   diagnostics.ok(
     "Motor encendido.",
     {
+
       symbol:
         state.symbol,
 
       strategy:
         state.strategy
+
     }
   );
 
@@ -1355,6 +1706,9 @@ function stopEngine(
   announce = true
 ) {
 
+  invalidarPrediccionActual();
+
+
   state.engineOn =
     false;
 
@@ -1367,14 +1721,13 @@ function stopEngine(
     false;
 
 
-  clearInterval(
-    state.countdownTimer
-  );
-
-
   clearTimeout(
     state.cooldownTimer
   );
+
+
+  state.cooldownTimer =
+    null;
 
 
   memoryManager.clean(
@@ -1410,8 +1763,14 @@ function stopEngine(
   );
 
 
-  UI.engineProgress.style.width =
-    "0%";
+  if (
+    UI.engineProgress
+  ) {
+
+    UI.engineProgress.style.width =
+      "0%";
+
+  }
 
 
   setText(
@@ -1438,8 +1797,14 @@ function stopEngine(
   );
 
 
-  UI.digits.innerHTML =
-    "";
+  if (
+    UI.digits
+  ) {
+
+    UI.digits.innerHTML =
+      "";
+
+  }
 
 
   renderLatency();
@@ -1450,7 +1815,11 @@ function stopEngine(
   ) {
 
     voiceAssistant.speak(
-      "Motor apagado. Memoria temporal liberada."
+      "Motor apagado. Memoria temporal liberada.",
+      {
+        replace:
+          true
+      }
     );
 
   }
@@ -1462,7 +1831,7 @@ function stopEngine(
 
 
 /* ==========================================
-   SEÑAL VISUAL
+   SEÑAL FLOTANTE
    ========================================== */
 
 function showFloating(
@@ -1471,6 +1840,15 @@ function showFloating(
   value,
   detail
 ) {
+
+  if (
+    !UI.floatingSignal
+  ) {
+
+    return;
+
+  }
+
 
   UI.floatingSignal.className =
     `signal-toast ${type} visible`;
@@ -1499,7 +1877,7 @@ function showFloating(
 function hideFloating() {
 
   UI.floatingSignal
-    .classList
+    ?.classList
     .remove(
       "visible"
     );
@@ -1507,9 +1885,22 @@ function hideFloating() {
 }
 
 
+/* ==========================================
+   MOTIVOS
+   ========================================== */
+
 function showReasons(
   result
 ) {
+
+  if (
+    !UI.signalReasons
+  ) {
+
+    return;
+
+  }
+
 
   UI.signalReasons.innerHTML =
     "";
@@ -1557,16 +1948,87 @@ function showReasons(
 
 
 /* ==========================================
+   FIX13.4
+   EXPLICACIÓN BREVE DE LA SEÑAL
+   ========================================== */
+
+function construirResumenVoz(
+  result,
+  explanation
+) {
+
+  const direccion =
+    visualDirection(
+      result
+    );
+
+
+  const mercado =
+    marketRegistry.all()[
+      state.symbol
+    ]?.name ||
+    state.symbol;
+
+
+  const estrategia =
+    STRATEGIES[
+      state.strategy
+    ]?.voice ||
+    STRATEGIES[
+      state.strategy
+    ]?.name ||
+    state.strategy;
+
+
+  const detalle =
+    String(
+      explanation ||
+      ""
+    )
+      .trim();
+
+
+  return detalle
+    ? `Predicción confirmada. ${direccion}. Mercado ${mercado}. Estrategia ${estrategia}. ${detalle}`
+    : `Predicción confirmada. ${direccion}. Mercado ${mercado}. Estrategia ${estrategia}.`;
+
+}
+
+
+/* ==========================================
    FINALIZAR
    ========================================== */
 
 function finishPrediction(
-  message
+  message,
+  runId =
+    state.predictionRunId
 ) {
+
+  /*
+    FIX13.4:
+
+    Una predicción anterior ya no puede
+    cerrar ni modificar la nueva.
+  */
+
+  if (
+    runId !==
+    state.predictionRunId
+  ) {
+
+    return;
+
+  }
+
 
   clearInterval(
     state.countdownTimer
   );
+
+
+  state.countdownTimer =
+    null;
 
 
   state.predictionActive =
@@ -1589,8 +2051,14 @@ function finishPrediction(
   );
 
 
-  UI.engineProgress.style.width =
-    "0%";
+  if (
+    UI.engineProgress
+  ) {
+
+    UI.engineProgress.style.width =
+      "0%";
+
+  }
 
 
   setText(
@@ -1615,9 +2083,13 @@ function finishPrediction(
 
 
   diagnostics.info(
-    "Predicción finalizada.",
+    "Predicción finalizada FIX13.4.",
     {
-      message
+
+      message,
+
+      runId
+
     }
   );
 
@@ -1633,6 +2105,16 @@ function finishPrediction(
   state.cooldownTimer =
     setTimeout(
       () => {
+
+        if (
+          runId !==
+          state.predictionRunId
+        ) {
+
+          return;
+
+        }
+
 
         state.cooldown =
           false;
@@ -1660,6 +2142,1031 @@ function finishPrediction(
 
 
 /* ==========================================
+   SINCRONIZACIÓN BOT FIX13.4
+   ========================================== */
+
+const BOT_CHANNEL_NAME =
+  "trading-analyzer-bot-v1-mr";
+
+
+const botChannel =
+  "BroadcastChannel" in
+    window
+    ? new BroadcastChannel(
+        BOT_CHANNEL_NAME
+      )
+    : null;
+
+
+/* ==========================================
+   ENVIAR SEÑAL AL BOT
+   ========================================== */
+
+function enviarSenalAlBot(
+  result,
+  segundoEntrada,
+  targetVisualAt
+) {
+
+  const ultimoPrecio =
+    marketBuffer.prices.length
+      ? marketBuffer.prices[
+          marketBuffer.prices.length -
+            1
+        ]
+      : null;
+
+
+  const ultimoDigito =
+    marketBuffer.digits.length
+      ? marketBuffer.digits[
+          marketBuffer.digits.length -
+            1
+        ]
+      : null;
+
+
+  const visualTarget =
+    Number(
+      targetVisualAt
+    );
+
+
+  if (
+    !Number.isFinite(
+      visualTarget
+    ) ||
+    visualTarget <=
+      Date.now()
+  ) {
+
+    diagnostics.error(
+      "FIX13.4: targetVisualAt inválido.",
+      {
+
+        targetVisualAt:
+          visualTarget
+
+      }
+    );
+
+
+    log(
+      "BOT FIX13.4 ERROR → target visual inválido.",
+      "error"
+    );
+
+
+    return false;
+
+  }
+
+
+  const ahoraEpoch =
+    Date.now();
+
+
+  /*
+    IMPORTANTE:
+
+    Por compatibilidad con el BOT FIX13.3,
+    targetExecutionAt todavía contiene
+    targetVisualAt.
+
+    En el próximo cambio del BOT,
+    targetBuyAt será calculado por
+    mercado y podrá quedar antes o
+    después de este punto visual.
+  */
+
+  const senal = {
+
+    id:
+      `${ahoraEpoch}-${state.symbol}-${state.strategy}`,
+
+    mercado:
+      state.symbol,
+
+    estrategia:
+      state.strategy,
+
+    direccion:
+      result.direction,
+
+    confianza:
+      Number(
+        result.score ||
+        0
+      ),
+
+    precio:
+      ultimoPrecio,
+
+    ultimoDigito,
+
+    tendencia:
+      state.snapshot
+        ?.trend
+        ?.direction ??
+      null,
+
+    rsi:
+      state.snapshot
+        ?.rsi ??
+      null,
+
+    momentum:
+      state.snapshot
+        ?.momentum
+        ?.direction ??
+      null,
+
+    volatilidad:
+      state.snapshot
+        ?.volatility
+        ?.level ??
+      null,
+
+    segundosEntrada:
+      segundoEntrada,
+
+    modo:
+      state.mode,
+
+
+    /* COMPATIBILIDAD */
+
+    targetExecutionAt:
+      visualTarget,
+
+
+    /* FIX13.4 */
+
+    targetVisualAt:
+      visualTarget,
+
+    targetBuyAt:
+      null,
+
+    analyzerSentEpoch:
+      ahoraEpoch,
+
+    timestamp:
+      ahoraEpoch,
+
+
+    metadata: {
+
+      ...(
+        result.metadata ||
+        {}
+      ),
+
+      targetExecutionAt:
+        visualTarget,
+
+      targetVisualAt:
+        visualTarget,
+
+      targetBuyAt:
+        null,
+
+      analyzerSentEpoch:
+        ahoraEpoch,
+
+      preavisoBotSegundos:
+        BOT_PREAVISO_SEGUNDOS,
+
+      preavisoBotMs:
+        BOT_PREAVISO_MS,
+
+      targetBuyPendienteCalibracion:
+        true,
+
+      fix:
+        "FIX13.4-VISUAL-TARGET"
+
+    },
+
+
+    origen:
+      `Trading Analyst Pro MR V${APP_VERSION}`
+
+  };
+
+
+  let broadcastOk =
+    false;
+
+
+  let storageOk =
+    false;
+
+
+  try {
+
+    if (
+      botChannel
+    ) {
+
+      botChannel.postMessage(
+        senal
+      );
+
+
+      broadcastOk =
+        true;
+
+    }
+
+  }
+
+  catch (
+    error
+  ) {
+
+    diagnostics.error(
+      "Error BroadcastChannel hacia BOT.",
+      {
+
+        message:
+          error.message
+
+      }
+    );
+
+  }
+
+
+  try {
+
+    localStorage.setItem(
+      "TA_BOT_SIGNAL_V1",
+      JSON.stringify(
+        senal
+      )
+    );
+
+
+    storageOk =
+      true;
+
+  }
+
+  catch (
+    error
+  ) {
+
+    diagnostics.error(
+      "Error localStorage hacia BOT.",
+      {
+
+        message:
+          error.message
+
+      }
+    );
+
+  }
+
+
+  const anticipacion =
+    visualTarget -
+    Date.now();
+
+
+  diagnostics.ok(
+    "Señal FIX13.4 enviada al BOT.",
+    {
+
+      mercado:
+        senal.mercado,
+
+      direccion:
+        senal.direccion,
+
+      confianza:
+        senal.confianza,
+
+      targetVisualAt:
+        senal.targetVisualAt,
+
+      targetExecutionAt:
+        senal.targetExecutionAt,
+
+      anticipacionMs:
+        anticipacion,
+
+      BroadcastChannel:
+        broadcastOk,
+
+      localStorage:
+        storageOk
+
+    }
+  );
+
+
+  log(
+    `BOT FIX13.4 → ${senal.mercado} · ${senal.direccion} · ${senal.confianza}% · TARGET VISUAL ${segundoEntrada} · PREAVISO ${(anticipacion / 1000).toFixed(2)} s`,
+    "ok"
+  );
+
+
+  return (
+    broadcastOk ||
+    storageOk
+  );
+
+}
+
+
+/* ==========================================
+   CUENTA REGRESIVA REAL
+   ========================================== */
+
+async function runCountdown(
+  seconds,
+  runId
+) {
+
+  clearInterval(
+    state.countdownTimer
+  );
+
+
+  return new Promise(
+    (resolve) => {
+
+      const startedAt =
+        performance.now();
+
+
+      let lastShown =
+        null;
+
+
+      let alertRunId =
+        0;
+
+
+      const flashEntry =
+        () => {
+
+          if (
+            runId !==
+              state.predictionRunId ||
+            !UI.entryAlertEnabled
+              ?.checked ||
+            !UI.entryFlash
+          ) {
+
+            return;
+
+          }
+
+
+          UI.entryFlash.hidden =
+            false;
+
+
+          UI.entryFlash
+            .classList
+            .remove(
+              "pulse"
+            );
+
+
+          void UI.entryFlash.offsetWidth;
+
+
+          UI.entryFlash
+            .classList
+            .add(
+              "pulse"
+            );
+
+
+          setTimeout(
+            () => {
+
+              if (
+                runId ===
+                state.predictionRunId
+              ) {
+
+                UI.entryFlash.hidden =
+                  true;
+
+              }
+
+            },
+            650
+          );
+
+        };
+
+
+      const update =
+        () => {
+
+          if (
+            runId !==
+            state.predictionRunId
+          ) {
+
+            clearInterval(
+              state.countdownTimer
+            );
+
+
+            state.countdownTimer =
+              null;
+
+
+            resolve();
+
+
+            return;
+
+          }
+
+
+          const elapsed =
+            (
+              performance.now() -
+              startedAt
+            ) /
+            1000;
+
+
+          const remaining =
+            Math.max(
+              0,
+              Number(
+                seconds
+              ) -
+              Math.floor(
+                elapsed
+              )
+            );
+
+
+          if (
+            remaining !==
+            lastShown
+          ) {
+
+            lastShown =
+              remaining;
+
+
+            setText(
+              UI.countdown,
+              remaining
+            );
+
+
+            /*
+              IMPORTANTE:
+
+              La voz recibe el número,
+              pero NO controla cuándo
+              cambia el contador.
+
+              El contador está gobernado
+              exclusivamente por
+              performance.now().
+            */
+
+            const thisRun =
+              ++alertRunId;
+
+
+            const spoken =
+              voiceAssistant
+                .speakCountdownNumber(
+                  remaining
+                );
+
+
+            const target =
+              Number(
+                UI.entryAlertSecond
+                  ?.value ||
+                10
+              );
+
+
+            if (
+              UI.entryAlertEnabled
+                ?.checked &&
+              remaining ===
+                target
+            ) {
+
+              flashEntry();
+
+            }
+
+
+            if (
+              spoken &&
+              typeof spoken.then ===
+                "function"
+            ) {
+
+              spoken.catch(
+                () => {}
+              );
+
+            }
+
+
+            void thisRun;
+
+          }
+
+
+          if (
+            elapsed >=
+            Number(
+              seconds
+            )
+          ) {
+
+            clearInterval(
+              state.countdownTimer
+            );
+
+
+            state.countdownTimer =
+              null;
+
+
+            setText(
+              UI.countdown,
+              0
+            );
+
+
+            resolve();
+
+          }
+
+        };
+
+
+      update();
+
+
+      state.countdownTimer =
+        setInterval(
+          update,
+          40
+        );
+
+    }
+  );
+
+}
+
+
+/* ==========================================
+   FIX13.4
+   SECUENCIA CORRECTA
+
+   1. SEÑAL APROBADA
+   2. EXPLICACIÓN BREVE
+   3. CREA TARGET VISUAL
+   4. ENVÍA AL BOT
+   5. "TIENES 9 SEGUNDOS..."
+   6. ESPERA REAL 9 S
+   7. ANUNCIA VENTANA DE 10 S
+   8. TARGET VISUAL
+   9. 10, 9, 8, 7...
+   ========================================== */
+
+async function beginPredictionSequence(
+  result,
+  runId
+) {
+
+  if (
+    !prediccionSigueActiva(
+      runId
+    )
+  ) {
+
+    return;
+
+  }
+
+
+  const explanation =
+    briefExplanation(
+      result
+    );
+
+
+  state.lastPredictionResult =
+    result;
+
+
+  const targetSecond =
+    Number(
+      UI.entryAlertSecond
+        ?.value ||
+      10
+    );
+
+
+  /* ======================================
+     1. EXPLICACIÓN BREVE
+     ====================================== */
+
+  setText(
+    UI.engineStage,
+    "SEÑAL CONFIRMADA"
+  );
+
+
+  setText(
+    UI.engineDetail,
+    "Explicando brevemente la entrada."
+  );
+
+
+  const resumenVoz =
+    construirResumenVoz(
+      result,
+      explanation
+    );
+
+
+  /*
+    Aquí sí esperamos la explicación.
+
+    Eso es intencional:
+    primero se explica POR QUÉ existe
+    la entrada.
+
+    Todavía no comenzó el preaviso
+    de 9 segundos.
+  */
+
+  try {
+
+    const anuncio =
+      voiceAssistant.speak(
+        resumenVoz,
+        {
+          replace:
+            true,
+
+          rate:
+            1.02
+        }
+      );
+
+
+    if (
+      anuncio &&
+      typeof anuncio.then ===
+        "function"
+    ) {
+
+      await anuncio;
+
+    }
+
+  }
+
+  catch (
+    error
+  ) {
+
+    diagnostics.info(
+      "FIX13.4: la voz de explicación no pudo completarse.",
+      {
+
+        message:
+          error?.message ||
+          String(
+            error
+          )
+
+      }
+    );
+
+  }
+
+
+  if (
+    !prediccionSigueActiva(
+      runId
+    )
+  ) {
+
+    return;
+
+  }
+
+
+  /* ======================================
+     2. CREAR TARGET VISUAL
+     ====================================== */
+
+  const targetVisualAt =
+    Date.now() +
+    BOT_PREAVISO_MS;
+
+
+  /* ======================================
+     3. ENVIAR INMEDIATAMENTE AL BOT
+     ====================================== */
+
+  const enviada =
+    enviarSenalAlBot(
+      result,
+      targetSecond,
+      targetVisualAt
+    );
+
+
+  if (
+    !enviada
+  ) {
+
+    diagnostics.error(
+      "FIX13.4: no se pudo transmitir la señal al BOT."
+    );
+
+
+    log(
+      "BOT FIX13.4 → FALLO DE TRANSMISIÓN.",
+      "error"
+    );
+
+  }
+
+
+  /* ======================================
+     4. PREAVISO 9 SEGUNDOS
+     ====================================== */
+
+  setText(
+    UI.engineStage,
+    "PREPARACIÓN DE ENTRADA"
+  );
+
+
+  setText(
+    UI.engineDetail,
+    `Tienes ${BOT_PREAVISO_SEGUNDOS} segundos para prepararte antes del punto ${targetSecond}.`
+  );
+
+
+  if (
+    UI.engineProgress
+  ) {
+
+    UI.engineProgress.style.width =
+      "92%";
+
+  }
+
+
+  /*
+    Esta voz NO controla los 9 segundos.
+
+    El target ya quedó grabado.
+  */
+
+  Promise.resolve(
+    voiceAssistant.speak(
+      `Tienes ${BOT_PREAVISO_SEGUNDOS} segundos para prepararte para la operación.`,
+      {
+        replace:
+          true,
+
+        rate:
+          1.04
+      }
+    )
+  )
+    .catch(
+      () => {}
+    );
+
+
+  diagnostics.ok(
+    "FIX13.4 PREAVISO INICIADO.",
+    {
+
+      runId,
+
+      targetVisualAt,
+
+      anticipacionMs:
+        targetVisualAt -
+        Date.now()
+
+    }
+  );
+
+
+  log(
+    `FIX13.4 → PREAVISO ${BOT_PREAVISO_SEGUNDOS} s · TARGET VISUAL ${targetSecond}.`,
+    "ok"
+  );
+
+
+  /* ======================================
+     5. ESPERAR HASTA ANTES DEL TARGET
+     ====================================== */
+
+  const avisoVentanaAt =
+    targetVisualAt -
+    AVISO_VENTANA_ANTES_MS;
+
+
+  const esperaHastaAviso =
+    Math.max(
+      0,
+      avisoVentanaAt -
+      Date.now()
+    );
+
+
+  await sleep(
+    esperaHastaAviso
+  );
+
+
+  if (
+    !prediccionSigueActiva(
+      runId
+    )
+  ) {
+
+    return;
+
+  }
+
+
+  /* ======================================
+     6. AVISO DE LA VENTANA DE 10 SEGUNDOS
+     ====================================== */
+
+  Promise.resolve(
+    voiceAssistant.speak(
+      "Tienes diez segundos para hacer la operación.",
+      {
+        replace:
+          true,
+
+        rate:
+          1.06
+      }
+    )
+  )
+    .catch(
+      () => {}
+    );
+
+
+  /*
+    El reloj NO espera la voz.
+  */
+
+  const esperaFinal =
+    Math.max(
+      0,
+      targetVisualAt -
+      Date.now()
+    );
+
+
+  await sleep(
+    esperaFinal
+  );
+
+
+  if (
+    !prediccionSigueActiva(
+      runId
+    )
+  ) {
+
+    return;
+
+  }
+
+
+  /* ======================================
+     7. TARGET VISUAL EXACTO
+     ====================================== */
+
+  const visualReachedAt =
+    Date.now();
+
+
+  const desviacionVisualMs =
+    visualReachedAt -
+    targetVisualAt;
+
+
+  setText(
+    UI.engineStage,
+    "VENTANA DE EJECUCIÓN"
+  );
+
+
+  setText(
+    UI.engineDetail,
+    `TARGET VISUAL ${targetSecond} alcanzado · contador FIX13.4.`
+  );
+
+
+  if (
+    UI.engineProgress
+  ) {
+
+    UI.engineProgress.style.width =
+      "100%";
+
+  }
+
+
+  diagnostics.ok(
+    "FIX13.4 TARGET VISUAL ALCANZADO.",
+    {
+
+      runId,
+
+      targetVisualAt,
+
+      visualReachedAt,
+
+      desviacionVisualMs
+
+    }
+  );
+
+
+  log(
+    `FIX13.4 → CONTADOR ${targetSecond} · desviación visual ${desviacionVisualMs} ms.`,
+    "ok"
+  );
+
+
+  /* ======================================
+     8. 10 → 0
+     ====================================== */
+
+  await runCountdown(
+    ENGINE.executionSeconds,
+    runId
+  );
+
+
+  if (
+    !prediccionSigueActiva(
+      runId
+    )
+  ) {
+
+    return;
+
+  }
+
+
+  await sleep(
+    350
+  );
+
+
+  if (
+    !prediccionSigueActiva(
+      runId
+    )
+  ) {
+
+    return;
+
+  }
+
+
+  finishPrediction(
+    "La ventana de ejecución terminó.",
+    runId
+  );
+
+}
+
+
+/* ==========================================
    SOLICITAR PREDICCIÓN
    ========================================== */
 
@@ -1674,8 +3181,23 @@ async function requestPrediction() {
   }
 
 
+  /*
+    FIX13.4:
+
+    Desde aquí nace una predicción nueva.
+    Todo código viejo queda invalidado.
+  */
+
+  const runId =
+    nuevaPrediccionId();
+
+
   state.predictionActive =
     true;
+
+
+  state.lastPredictionResult =
+    null;
 
 
   renderControls();
@@ -1702,8 +3224,14 @@ async function requestPrediction() {
   );
 
 
-  UI.engineProgress.style.width =
-    "55%";
+  if (
+    UI.engineProgress
+  ) {
+
+    UI.engineProgress.style.width =
+      "55%";
+
+  }
 
 
   setText(
@@ -1736,13 +3264,20 @@ async function requestPrediction() {
         state.symbol
       ]?.name ||
       state.symbol
-    }.`
+    }.`,
+    {
+      replace:
+        true
+    }
   );
 
 
   diagnostics.info(
-    "Predicción solicitada.",
+    "Predicción FIX13.4 solicitada.",
     {
+
+      runId,
+
       symbol:
         state.symbol,
 
@@ -1751,6 +3286,7 @@ async function requestPrediction() {
 
       mode:
         state.mode
+
     }
   );
 
@@ -1775,13 +3311,20 @@ async function requestPrediction() {
           : ENGINE.quickValidationMs;
 
 
-  await new Promise(
-    (resolve) =>
-      setTimeout(
-        resolve,
-        validationDelay
-      )
+  await sleep(
+    validationDelay
   );
+
+
+  if (
+    !prediccionSigueActiva(
+      runId
+    )
+  ) {
+
+    return;
+
+  }
 
 
   const first =
@@ -1793,6 +3336,7 @@ async function requestPrediction() {
 
   const freshSnapshot =
     buildSnapshot({
+
       prices:
         marketBuffer.prices,
 
@@ -1801,6 +3345,7 @@ async function requestPrediction() {
 
       mode:
         state.mode
+
     });
 
 
@@ -1828,6 +3373,7 @@ async function requestPrediction() {
 
   const timing =
     evaluateTiming({
+
       strategy:
         state.strategy,
 
@@ -1836,11 +3382,13 @@ async function requestPrediction() {
 
       latency:
         state.latency
+
     });
 
 
   const quality =
     applyQualityFilter({
+
       strategy:
         state.strategy,
 
@@ -1850,7 +3398,19 @@ async function requestPrediction() {
       consensus,
 
       timing
+
     });
+
+
+  if (
+    !prediccionSigueActiva(
+      runId
+    )
+  ) {
+
+    return;
+
+  }
 
 
   const result = {
@@ -1884,8 +3444,14 @@ async function requestPrediction() {
   );
 
 
-  UI.signalBar.style.width =
-    `${quality.score}%`;
+  if (
+    UI.signalBar
+  ) {
+
+    UI.signalBar.style.width =
+      `${quality.score}%`;
+
+  }
 
 
   showReasons(
@@ -1893,13 +3459,23 @@ async function requestPrediction() {
   );
 
 
+  /* ======================================
+     NO OPERAR
+     ====================================== */
+
   if (
     first.direction ===
     "NO_OPERAR"
   ) {
 
-    UI.signalCard.className =
-      "card signal-card no-operate";
+    if (
+      UI.signalCard
+    ) {
+
+      UI.signalCard.className =
+        "card signal-card no-operate";
+
+    }
 
 
     setText(
@@ -1929,17 +3505,37 @@ async function requestPrediction() {
 
 
     voiceAssistant.speak(
-      "Coincidencia cero. No operar."
+      "Coincidencia cero. No operar.",
+      {
+        replace:
+          true
+      }
     );
 
 
-    setTimeout(
-      () =>
-        finishPrediction(
-          "El candidato fue 0 y se descartó."
-        ),
+    /*
+      FIX13.4:
+
+      Ya NO dejamos un setTimeout suelto.
+    */
+
+    await sleep(
       2200
     );
+
+
+    if (
+      prediccionSigueActiva(
+        runId
+      )
+    ) {
+
+      finishPrediction(
+        "El candidato fue 0 y se descartó.",
+        runId
+      );
+
+    }
 
 
     return;
@@ -1947,12 +3543,22 @@ async function requestPrediction() {
   }
 
 
+  /* ======================================
+     CALIDAD INSUFICIENTE
+     ====================================== */
+
   if (
     !quality.approved
   ) {
 
-    UI.signalCard.className =
-      "card signal-card wait";
+    if (
+      UI.signalCard
+    ) {
+
+      UI.signalCard.className =
+        "card signal-card wait";
+
+    }
 
 
     setText(
@@ -1982,23 +3588,68 @@ async function requestPrediction() {
 
 
     voiceAssistant.speak(
-      "No hay una entrada suficientemente clara. Espere y vuelva a solicitar una predicción."
+      `No hay una entrada suficientemente clara. ${quality.reason || ""}`,
+      {
+        replace:
+          true
+      }
     );
 
 
-    setTimeout(
-      () =>
-        finishPrediction(
+    diagnostics.info(
+      "FIX13.4 señal descartada por calidad.",
+      {
+
+        runId,
+
+        score:
+          quality.score,
+
+        reason:
           quality.reason
-        ),
+
+      }
+    );
+
+
+    /*
+      MUY IMPORTANTE:
+
+      Una predicción que entra aquí
+      TERMINA aquí.
+
+      No existe ninguna ruta que pueda
+      transformarla después en EJECUTAR.
+    */
+
+    await sleep(
       2600
     );
+
+
+    if (
+      prediccionSigueActiva(
+        runId
+      )
+    ) {
+
+      finishPrediction(
+        quality.reason ||
+        "Calidad insuficiente.",
+        runId
+      );
+
+    }
 
 
     return;
 
   }
 
+
+  /* ======================================
+     SEÑAL APROBADA
+     ====================================== */
 
   const value =
     visualDirection(
@@ -2012,8 +3663,14 @@ async function requestPrediction() {
     );
 
 
-  UI.signalCard.className =
-    "card signal-card confirmed";
+  if (
+    UI.signalCard
+  ) {
+
+    UI.signalCard.className =
+      "card signal-card confirmed";
+
+  }
 
 
   setText(
@@ -2051,28 +3708,44 @@ async function requestPrediction() {
 
   setText(
     UI.engineDetail,
-    "Sincronizando BOT y cuenta regresiva FIX13.3."
+    "Preparando explicación y preaviso FIX13.4."
   );
 
 
-  UI.engineProgress.style.width =
-    "88%";
+  if (
+    UI.engineProgress
+  ) {
+
+    UI.engineProgress.style.width =
+      "88%";
+
+  }
 
 
   await beginPredictionSequence(
-    result
+    result,
+    runId
   );
 
 }
 
 
 /* ==========================================
-   DIAGNÓSTICO
+   DIAGNÓSTICOS
    ========================================== */
 
 function renderDiagnostics(
   entries
 ) {
+
+  if (
+    !UI.diagnosticContent
+  ) {
+
+    return;
+
+  }
+
 
   if (
     !entries.length
@@ -2176,6 +3849,15 @@ function renderCalibration() {
   );
 
 
+  if (
+    !UI.calibrationTable
+  ) {
+
+    return;
+
+  }
+
+
   UI.calibrationTable.innerHTML =
     "";
 
@@ -2211,762 +3893,12 @@ function renderCalibration() {
 }
 
 
-function sleep(
-  ms
-) {
-
-  return new Promise(
-    (resolve) =>
-      setTimeout(
-        resolve,
-        ms
-      )
-  );
-
-}
-
-
-/* ==========================================
-   SINCRONIZACIÓN BOT FIX13.3
-   ========================================== */
-
-const BOT_CHANNEL_NAME =
-  "trading-analyzer-bot-v1-mr";
-
-
-const botChannel =
-  "BroadcastChannel" in
-    window
-    ? new BroadcastChannel(
-        BOT_CHANNEL_NAME
-      )
-    : null;
-
-
-/* ==========================================
-   ENVIAR SEÑAL
-   ========================================== */
-
-function enviarSenalAlBot(
-  result,
-  segundoEntrada,
-  targetExecutionAt
-) {
-
-  const ultimoPrecio =
-    marketBuffer.prices.length
-      ? marketBuffer.prices[
-          marketBuffer.prices.length -
-            1
-        ]
-      : null;
-
-
-  const ultimoDigito =
-    marketBuffer.digits.length
-      ? marketBuffer.digits[
-          marketBuffer.digits.length -
-            1
-        ]
-      : null;
-
-
-  const target =
-    Number(
-      targetExecutionAt
-    );
-
-
-  if (
-    !Number.isFinite(
-      target
-    ) ||
-    target <=
-      Date.now()
-  ) {
-
-    diagnostics.error(
-      "FIX13.3: targetExecutionAt inválido.",
-      {
-        targetExecutionAt:
-          target
-      }
-    );
-
-
-    log(
-      "BOT FIX13.3 ERROR → target inválido.",
-      "error"
-    );
-
-
-    return false;
-
-  }
-
-
-  const ahoraEpoch =
-    Date.now();
-
-
-  const senal = {
-
-    id:
-      `${ahoraEpoch}-${state.symbol}-${state.strategy}`,
-
-    mercado:
-      state.symbol,
-
-    estrategia:
-      state.strategy,
-
-    direccion:
-      result.direction,
-
-    confianza:
-      Number(
-        result.score ||
-        0
-      ),
-
-    precio:
-      ultimoPrecio,
-
-    ultimoDigito:
-      ultimoDigito,
-
-    tendencia:
-      state.snapshot
-        ?.trend
-        ?.direction ??
-      null,
-
-    rsi:
-      state.snapshot
-        ?.rsi ??
-      null,
-
-    momentum:
-      state.snapshot
-        ?.momentum
-        ?.direction ??
-      null,
-
-    volatilidad:
-      state.snapshot
-        ?.volatility
-        ?.level ??
-      null,
-
-    segundosEntrada:
-      segundoEntrada,
-
-    modo:
-      state.mode,
-
-    targetExecutionAt:
-      target,
-
-    /*
-      FIX13.3:
-      MARCA ABSOLUTA PARA EL BOT.
-    */
-
-    analyzerSentEpoch:
-      ahoraEpoch,
-
-    timestamp:
-      ahoraEpoch,
-
-    metadata: {
-
-      ...(
-        result.metadata ||
-        {}
-      ),
-
-      targetExecutionAt:
-        target,
-
-      analyzerSentEpoch:
-        ahoraEpoch,
-
-      preavisoBotSegundos:
-        BOT_PREAVISO_SEGUNDOS,
-
-      preavisoBotMs:
-        BOT_PREAVISO_MS,
-
-      fix:
-        "FIX13.3-SYNC"
-
-    },
-
-    origen:
-      `Trading Analyst Pro MR V${APP_VERSION}`
-
-  };
-
-
-  let broadcastOk =
-    false;
-
-
-  let storageOk =
-    false;
-
-
-  try {
-
-    if (
-      botChannel
-    ) {
-
-      botChannel.postMessage(
-        senal
-      );
-
-
-      broadcastOk =
-        true;
-
-    }
-
-  }
-
-  catch (
-    error
-  ) {
-
-    diagnostics.error(
-      "Error BroadcastChannel hacia BOT.",
-      {
-        message:
-          error.message
-      }
-    );
-
-  }
-
-
-  try {
-
-    localStorage.setItem(
-      "TA_BOT_SIGNAL_V1",
-      JSON.stringify(
-        senal
-      )
-    );
-
-
-    storageOk =
-      true;
-
-  }
-
-  catch (
-    error
-  ) {
-
-    diagnostics.error(
-      "Error localStorage hacia BOT.",
-      {
-        message:
-          error.message
-      }
-    );
-
-  }
-
-
-  const anticipacion =
-    target -
-    Date.now();
-
-
-  diagnostics.ok(
-    "Señal FIX13.3 enviada al BOT V1 MR.",
-    {
-
-      mercado:
-        senal.mercado,
-
-      direccion:
-        senal.direccion,
-
-      confianza:
-        senal.confianza,
-
-      segundoEntrada:
-        senal.segundosEntrada,
-
-      targetExecutionAt:
-        senal.targetExecutionAt,
-
-      analyzerSentEpoch:
-        senal.analyzerSentEpoch,
-
-      anticipacionMs:
-        anticipacion,
-
-      BroadcastChannel:
-        broadcastOk,
-
-      localStorage:
-        storageOk
-
-    }
-  );
-
-
-  log(
-    `BOT FIX13.3 → ${senal.mercado} · ${senal.direccion} · ${senal.confianza}% · TARGET ${segundoEntrada} · PREAVISO ${(anticipacion / 1000).toFixed(2)} s`,
-    "ok"
-  );
-
-
-  return (
-    broadcastOk ||
-    storageOk
-  );
-
-}
-
-
-/* ==========================================
-   CUENTA REGRESIVA
-   ========================================== */
-
-async function runCountdown(
-  seconds
-) {
-
-  clearInterval(
-    state.countdownTimer
-  );
-
-
-  return new Promise(
-    (resolve) => {
-
-      const startedAt =
-        performance.now();
-
-
-      let lastShown =
-        null;
-
-
-      let alertRunId =
-        0;
-
-
-      const flashEntry =
-        () => {
-
-          if (
-            !UI.entryAlertEnabled
-              ?.checked ||
-            !UI.entryFlash
-          ) {
-
-            return;
-
-          }
-
-
-          UI.entryFlash.hidden =
-            false;
-
-
-          UI.entryFlash.classList.remove(
-            "pulse"
-          );
-
-
-          void UI.entryFlash.offsetWidth;
-
-
-          UI.entryFlash.classList.add(
-            "pulse"
-          );
-
-
-          setTimeout(
-            () => {
-
-              UI.entryFlash.hidden =
-                true;
-
-            },
-            650
-          );
-
-        };
-
-
-      const update =
-        () => {
-
-          const elapsed =
-            (
-              performance.now() -
-              startedAt
-            ) /
-            1000;
-
-
-          const remaining =
-            Math.max(
-              0,
-              Number(
-                seconds
-              ) -
-              Math.floor(
-                elapsed
-              )
-            );
-
-
-          if (
-            remaining !==
-            lastShown
-          ) {
-
-            lastShown =
-              remaining;
-
-
-            setText(
-              UI.countdown,
-              remaining
-            );
-
-
-            const target =
-              Number(
-                UI.entryAlertSecond
-                  ?.value ||
-                10
-              );
-
-
-            const thisRun =
-              ++alertRunId;
-
-
-            const spoken =
-              voiceAssistant
-                .speakCountdownNumber(
-                  remaining
-                );
-
-
-            if (
-              UI.entryAlertEnabled
-                ?.checked &&
-              remaining ===
-                target &&
-              spoken &&
-              typeof spoken.then ===
-                "function"
-            ) {
-
-              spoken.then(
-                () => {
-
-                  if (
-                    thisRun !==
-                    alertRunId
-                  ) {
-
-                    return;
-
-                  }
-
-
-                  const delay =
-                    Math.max(
-                      0,
-                      Number(
-                        UI.entryAlertDelay
-                          ?.value ||
-                        0
-                      )
-                    );
-
-
-                  setTimeout(
-                    flashEntry,
-                    delay
-                  );
-
-                }
-              );
-
-            }
-
-          }
-
-
-          if (
-            elapsed >=
-            Number(
-              seconds
-            )
-          ) {
-
-            clearInterval(
-              state.countdownTimer
-            );
-
-
-            setText(
-              UI.countdown,
-              0
-            );
-
-
-            resolve();
-
-          }
-
-        };
-
-
-      update();
-
-
-      state.countdownTimer =
-        setInterval(
-          update,
-          40
-        );
-
-    }
-  );
-
-}
-
-
-/* ==========================================
-   SECUENCIA FIX13.3
-
-   CAMBIO CLAVE:
-
-   YA NO ESPERAMOS A QUE TERMINE LA VOZ
-   ANTES DE CREAR EL TARGET.
-
-   AHORA:
-   T0 = SEÑAL CONFIRMADA
-   T0 = TARGET CREADO
-   T0 = ENVÍO AL BOT
-   T0 -> VOZ NO BLOQUEANTE
-   T0 + 2s = CONTADOR 10
-   T0 + 2s = BUY TARGET BOT
-   ========================================== */
-
-async function beginPredictionSequence(
-  result
-) {
-
-  const explanation =
-    briefExplanation(
-      result
-    );
-
-
-  state.lastPredictionResult =
-    result;
-
-
-  const targetSecond =
-    Number(
-      UI.entryAlertSecond
-        ?.value ||
-      10
-    );
-
-
-  /*
-    FIX13.3:
-    EL TARGET SE CREA ANTES DE LA VOZ.
-  */
-
-  const targetExecutionAt =
-    Date.now() +
-    BOT_PREAVISO_MS;
-
-
-  setText(
-    UI.engineStage,
-    "PREAVISO FIX13.3 AL BOT"
-  );
-
-
-  setText(
-    UI.engineDetail,
-    `BOT recibe la señal ${BOT_PREAVISO_SEGUNDOS.toFixed(1)} s antes del segundo ${targetSecond}.`
-  );
-
-
-  UI.engineProgress.style.width =
-    "90%";
-
-
-  /*
-    ENVIAMOS PRIMERO.
-  */
-
-  const enviada =
-    enviarSenalAlBot(
-      result,
-      targetSecond,
-      targetExecutionAt
-    );
-
-
-  if (
-    !enviada
-  ) {
-
-    diagnostics.error(
-      "FIX13.3: no se pudo transmitir la señal al BOT."
-    );
-
-
-    log(
-      "BOT FIX13.3 → FALLO DE TRANSMISIÓN.",
-      "error"
-    );
-
-  }
-
-
-  /*
-    VOZ NO BLOQUEANTE.
-
-    IMPORTANTE:
-    NO USAMOS await AQUÍ.
-
-    Aunque la voz dure más,
-    el target no se desplaza.
-  */
-
-  Promise.resolve(
-    voiceAssistant
-      .announcePredictionAndExecution(
-        result,
-        explanation
-      )
-  )
-    .catch(
-      (
-        error
-      ) => {
-
-        diagnostics.error(
-          "FIX13.3: error en anuncio de voz.",
-          {
-            message:
-              error?.message ||
-              String(
-                error
-              )
-          }
-        );
-
-      }
-    );
-
-
-  /*
-    ESPERA HASTA EL MISMO TARGET
-    QUE YA TIENE EL BOT.
-  */
-
-  const espera =
-    Math.max(
-      0,
-      targetExecutionAt -
-      Date.now()
-    );
-
-
-  await sleep(
-    espera
-  );
-
-
-  /*
-    ESTE INSTANTE DEBE COINCIDIR CON:
-    - CONTADOR 10
-    - TARGET BOT
-    - BUY ENVIADO DEL BOT
-  */
-
-  setText(
-    UI.engineStage,
-    "VENTANA DE EJECUCIÓN"
-  );
-
-
-  setText(
-    UI.engineDetail,
-    `TARGET ${targetSecond} alcanzado · BOT sincronizado FIX13.3.`
-  );
-
-
-  UI.engineProgress.style.width =
-    "100%";
-
-
-  diagnostics.ok(
-    "FIX13.3 TARGET VISUAL ALCANZADO.",
-    {
-
-      targetExecutionAt,
-
-      visualReachedAt:
-        Date.now(),
-
-      desviacionVisualMs:
-        Date.now() -
-        targetExecutionAt
-
-    }
-  );
-
-
-  log(
-    `FIX13.3 → CONTADOR ${targetSecond} EN TARGET.`,
-    "ok"
-  );
-
-
-  await runCountdown(
-    ENGINE.executionSeconds
-  );
-
-
-  await sleep(
-    450
-  );
-
-
-  finishPrediction(
-    "La ventana de ejecución terminó."
-  );
-
-}
-
-
 /* ==========================================
    AJUSTES
    ========================================== */
 
 const ENTRY_SETTINGS_KEY =
-  "trading-entry-alert-v11-3-4";
+  "trading-entry-alert-v13-4";
 
 
 function loadEntrySettings() {
@@ -3020,7 +3952,24 @@ function loadEntrySettings() {
 
   }
 
-  catch {}
+  catch (
+    error
+  ) {
+
+    diagnostics.info(
+      "No se pudieron cargar ajustes FIX13.4.",
+      {
+
+        message:
+          error?.message ||
+          String(
+            error
+          )
+
+      }
+    );
+
+  }
 
 }
 
@@ -3058,7 +4007,24 @@ function saveEntrySettings() {
 
   }
 
-  catch {}
+  catch (
+    error
+  ) {
+
+    diagnostics.info(
+      "No se pudieron guardar ajustes FIX13.4.",
+      {
+
+        message:
+          error?.message ||
+          String(
+            error
+          )
+
+      }
+    );
+
+  }
 
 }
 
@@ -3072,30 +4038,40 @@ async function init() {
   await voiceAssistant.init();
 
 
-  voiceAssistant.voices
-    .forEach(
-      (voice) => {
+  if (
+    UI.voiceSelect
+  ) {
 
-        const option =
-          document.createElement(
-            "option"
+    UI.voiceSelect.innerHTML =
+      "";
+
+
+    voiceAssistant.voices
+      .forEach(
+        (voice) => {
+
+          const option =
+            document.createElement(
+              "option"
+            );
+
+
+          option.value =
+            `${voice.name}|${voice.lang}`;
+
+
+          option.textContent =
+            `${voice.name} · ${voice.lang}`;
+
+
+          UI.voiceSelect.appendChild(
+            option
           );
 
+        }
+      );
 
-        option.value =
-          `${voice.name}|${voice.lang}`;
-
-
-        option.textContent =
-          `${voice.name} · ${voice.lang}`;
-
-
-        UI.voiceSelect.appendChild(
-          option
-        );
-
-      }
-    );
+  }
 
 
   diagnostics.subscribe(
@@ -3104,23 +4080,30 @@ async function init() {
 
 
   diagnostics.ok(
-    `Trading Analyst Pro MR V${APP_VERSION} iniciado. FIX13.3 SYNC · preaviso ${BOT_PREAVISO_SEGUNDOS.toFixed(1)} s.`
+    `Trading Analyst Pro MR V${APP_VERSION} iniciado · FIX13.4 · preaviso ${BOT_PREAVISO_SEGUNDOS} s · ventana ${ENGINE.executionSeconds} s.`
   );
 
 
   loadEntrySettings();
 
+
   populateMarketSelector();
+
 
   renderLanguage();
 
+
   renderTicker();
+
 
   renderStats();
 
+
   renderCalibration();
 
+
   renderControls();
+
 
   renderLatency();
 
@@ -3134,8 +4117,14 @@ async function init() {
   );
 
 
+  setText(
+    UI.appUpdateStatus,
+    "FIX13.4"
+  );
+
+
   log(
-    `Trading Analyst Pro MR V${APP_VERSION} listo · FIX13.3 SYNC · preaviso ${BOT_PREAVISO_SEGUNDOS.toFixed(1)} s.`,
+    `Trading Analyst Pro MR V${APP_VERSION} listo · FIX13.4 · PREAVISO ${BOT_PREAVISO_SEGUNDOS}s.`,
     "ok"
   );
 
@@ -3146,244 +4135,86 @@ async function init() {
    BOTONES PRINCIPALES
    ========================================== */
 
-UI.connectButton.addEventListener(
-  "click",
-  () =>
-    derivAPI.connect(
-      state.symbol
-    )
-);
+UI.connectButton
+  ?.addEventListener(
+    "click",
+    () => {
+
+      derivAPI.connect(
+        state.symbol
+      );
+
+    }
+  );
 
 
-UI.disconnectButton.addEventListener(
-  "click",
-  () => {
+UI.disconnectButton
+  ?.addEventListener(
+    "click",
+    () => {
 
-    stopEngine(
-      false
-    );
-
-
-    derivAPI.disconnect();
-
-  }
-);
+      stopEngine(
+        false
+      );
 
 
-UI.engineButton.addEventListener(
-  "click",
-  () => {
+      derivAPI.disconnect();
 
-    state.engineOn
-      ? stopEngine()
-      : startEngine();
-
-  }
-);
+    }
+  );
 
 
-UI.predictionButton.addEventListener(
-  "click",
-  requestPrediction
-);
+UI.engineButton
+  ?.addEventListener(
+    "click",
+    () => {
+
+      state.engineOn
+        ? stopEngine()
+        : startEngine();
+
+    }
+  );
+
+
+UI.predictionButton
+  ?.addEventListener(
+    "click",
+    requestPrediction
+  );
 
 
 /* ==========================================
    MERCADO
    ========================================== */
 
-UI.marketSelect.addEventListener(
-  "change",
-  () => {
+UI.marketSelect
+  ?.addEventListener(
+    "change",
+    () => {
 
-    const wasEngineOn =
-      state.engineOn;
+      const wasEngineOn =
+        state.engineOn;
 
 
-    state.symbol =
-      UI.marketSelect.value;
+      /*
+        Cualquier cambio de mercado
+        invalida una secuencia anterior.
+      */
 
+      invalidarPrediccionActual();
 
-    memoryManager.clean(
-      "market-change"
-    );
 
+      state.predictionActive =
+        false;
 
-    marketBuffer.reset();
 
+      state.symbol =
+        UI.marketSelect.value;
 
-    latencyMonitor.reset();
-
-
-    state.latency =
-      latencyMonitor.current;
-
-
-    state.snapshot =
-      null;
-
-
-    state.lastOpportunity =
-      null;
-
-
-    setText(
-      UI.marketName,
-      marketRegistry.all()[
-        state.symbol
-      ]?.name ||
-        state.symbol
-    );
-
-
-    setText(
-      UI.price,
-      "--"
-    );
-
-
-    setText(
-      UI.tickCount,
-      0
-    );
-
-
-    setText(
-      UI.lastDigit,
-      "--"
-    );
-
-
-    setText(
-      UI.memoryStatus,
-      0
-    );
-
-
-    UI.digits.innerHTML =
-      "";
-
-
-    if (
-      state.connected
-    ) {
-
-      derivAPI.changeSymbol(
-        state.symbol
-      );
-
-    }
-
-
-    if (
-      wasEngineOn
-    ) {
-
-      state.engineOn =
-        true;
-
-
-      setText(
-        UI.engineStage,
-        "SINCRONIZANDO NUEVO MERCADO"
-      );
-
-
-      setText(
-        UI.engineDetail,
-        "Recopilando datos limpios sin apagar el motor."
-      );
-
-
-      voiceAssistant.speak(
-        `Cambiando a ${
-          marketRegistry.all()[
-            state.symbol
-          ]?.name ||
-          state.symbol
-        }.`
-      );
-
-    }
-
-
-    populateMarketSelector();
-
-    renderLanguage();
-
-    renderTicker();
-
-    renderStats();
-
-    renderCalibration();
-
-    renderControls();
-
-  }
-);
-
-
-/* ==========================================
-   ESTRATEGIA
-   ========================================== */
-
-UI.strategySelect.addEventListener(
-  "change",
-  () => {
-
-    state.strategy =
-      UI.strategySelect.value;
-
-
-    state.snapshot =
-      null;
-
-
-    state.lastOpportunity =
-      null;
-
-
-    const previous =
-      state.symbol;
-
-
-    const changedMarket =
-      populateMarketSelector();
-
-
-    if (
-      !UI.marketSelect
-        .options
-        .length
-    ) {
-
-      setText(
-        UI.controlMessage,
-        state.connected
-          ? `No se detectó todavía un mercado compatible con ${STRATEGIES[state.strategy].name}. Actualizando desde Deriv...`
-          : `Conecte la herramienta para cargar mercados compatibles con ${STRATEGIES[state.strategy].name}.`
-      );
-
-
-      if (
-        state.connected
-      ) {
-
-        derivAPI.requestActiveSymbols();
-
-      }
-
-    }
-
-    else if (
-      changedMarket &&
-      state.connected &&
-      state.symbol !==
-        previous
-    ) {
 
       memoryManager.clean(
-        "strategy-market-change"
+        "market-change"
       );
 
 
@@ -3397,9 +4228,12 @@ UI.strategySelect.addEventListener(
         latencyMonitor.current;
 
 
-      derivAPI.changeSymbol(
-        state.symbol
-      );
+      state.snapshot =
+        null;
+
+
+      state.lastOpportunity =
+        null;
 
 
       setText(
@@ -3410,338 +4244,583 @@ UI.strategySelect.addEventListener(
           state.symbol
       );
 
+
+      setText(
+        UI.price,
+        "--"
+      );
+
+
+      setText(
+        UI.tickCount,
+        0
+      );
+
+
+      setText(
+        UI.lastDigit,
+        "--"
+      );
+
+
+      setText(
+        UI.memoryStatus,
+        0
+      );
+
+
+      if (
+        UI.digits
+      ) {
+
+        UI.digits.innerHTML =
+          "";
+
+      }
+
+
+      if (
+        state.connected
+      ) {
+
+        derivAPI.changeSymbol(
+          state.symbol
+        );
+
+      }
+
+
+      if (
+        wasEngineOn
+      ) {
+
+        state.engineOn =
+          true;
+
+
+        setText(
+          UI.engineStage,
+          "SINCRONIZANDO NUEVO MERCADO"
+        );
+
+
+        setText(
+          UI.engineDetail,
+          "Recopilando datos limpios sin apagar el motor."
+        );
+
+
+        voiceAssistant.speak(
+          `Cambiando a ${
+            marketRegistry.all()[
+              state.symbol
+            ]?.name ||
+            state.symbol
+          }.`,
+          {
+            replace:
+              true
+          }
+        );
+
+      }
+
+
+      populateMarketSelector();
+
+
+      renderLanguage();
+
+
+      renderTicker();
+
+
+      renderStats();
+
+
+      renderCalibration();
+
+
+      renderControls();
+
     }
+  );
 
 
-    setText(
-      UI.engineStage,
-      state.engineOn
-        ? "ESTRATEGIA ACTUALIZADA"
-        : "EN ESPERA"
-    );
+/* ==========================================
+   ESTRATEGIA
+   ========================================== */
+
+UI.strategySelect
+  ?.addEventListener(
+    "change",
+    () => {
+
+      invalidarPrediccionActual();
 
 
-    setText(
-      UI.engineDetail,
-      state.engineOn
-        ? `Analizando ${STRATEGIES[state.strategy].name} sin apagar el motor.`
-        : "Encienda el motor para comenzar."
-    );
+      state.predictionActive =
+        false;
 
 
-    voiceAssistant.speak(
-      `Estrategia ${
-        STRATEGIES[
-          state.strategy
-        ].voice
-      }.`
-    );
+      state.strategy =
+        UI.strategySelect.value;
 
 
-    renderLanguage();
+      state.snapshot =
+        null;
 
-    renderTicker();
 
-    renderStats();
+      state.lastOpportunity =
+        null;
 
-    renderCalibration();
 
-    renderControls();
+      const previous =
+        state.symbol;
 
-  }
-);
+
+      const changedMarket =
+        populateMarketSelector();
+
+
+      if (
+        !UI.marketSelect
+          .options
+          .length
+      ) {
+
+        setText(
+          UI.controlMessage,
+          state.connected
+            ? `No se detectó todavía un mercado compatible con ${STRATEGIES[state.strategy].name}. Actualizando desde Deriv...`
+            : `Conecte la herramienta para cargar mercados compatibles con ${STRATEGIES[state.strategy].name}.`
+        );
+
+
+        if (
+          state.connected
+        ) {
+
+          derivAPI.requestActiveSymbols();
+
+        }
+
+      }
+
+      else if (
+        changedMarket &&
+        state.connected &&
+        state.symbol !==
+          previous
+      ) {
+
+        memoryManager.clean(
+          "strategy-market-change"
+        );
+
+
+        marketBuffer.reset();
+
+
+        latencyMonitor.reset();
+
+
+        state.latency =
+          latencyMonitor.current;
+
+
+        derivAPI.changeSymbol(
+          state.symbol
+        );
+
+
+        setText(
+          UI.marketName,
+          marketRegistry.all()[
+            state.symbol
+          ]?.name ||
+            state.symbol
+        );
+
+      }
+
+
+      setText(
+        UI.engineStage,
+        state.engineOn
+          ? "ESTRATEGIA ACTUALIZADA"
+          : "EN ESPERA"
+      );
+
+
+      setText(
+        UI.engineDetail,
+        state.engineOn
+          ? `Analizando ${STRATEGIES[state.strategy].name} sin apagar el motor.`
+          : "Encienda el motor para comenzar."
+      );
+
+
+      voiceAssistant.speak(
+        `Estrategia ${
+          STRATEGIES[
+            state.strategy
+          ].voice
+        }.`,
+        {
+          replace:
+            true
+        }
+      );
+
+
+      renderLanguage();
+
+
+      renderTicker();
+
+
+      renderStats();
+
+
+      renderCalibration();
+
+
+      renderControls();
+
+    }
+  );
 
 
 /* ==========================================
    MODO
    ========================================== */
 
-UI.modeSelect.addEventListener(
-  "change",
-  () => {
+UI.modeSelect
+  ?.addEventListener(
+    "change",
+    () => {
 
-    state.mode =
-      UI.modeSelect.value;
-
-
-    state.snapshot =
-      null;
+      invalidarPrediccionActual();
 
 
-    state.lastOpportunity =
-      null;
+      state.predictionActive =
+        false;
 
 
-    renderCalibration();
+      state.mode =
+        UI.modeSelect.value;
 
-    renderControls();
 
-  }
-);
+      state.snapshot =
+        null;
+
+
+      state.lastOpportunity =
+        null;
+
+
+      renderCalibration();
+
+
+      renderControls();
+
+    }
+  );
 
 
 /* ==========================================
    VOZ
    ========================================== */
 
-UI.voiceButton.addEventListener(
-  "click",
-  () => {
+UI.voiceButton
+  ?.addEventListener(
+    "click",
+    () => {
 
-    setText(
-      UI.voiceButton,
-      voiceAssistant.toggle()
-        ? "🔊"
-        : "🔇"
-    );
-
-  }
-);
-
-
-UI.voiceSelect.addEventListener(
-  "change",
-  () => {
-
-    voiceAssistant.voice =
-      voiceAssistant.voices.find(
-        (voice) =>
-          `${voice.name}|${voice.lang}` ===
-          UI.voiceSelect.value
-      ) ||
-      voiceAssistant.voice;
-
-  }
-);
-
-
-UI.voiceRate.addEventListener(
-  "input",
-  () => {
-
-    voiceAssistant.rate =
-      Number(
-        UI.voiceRate.value
+      setText(
+        UI.voiceButton,
+        voiceAssistant.toggle()
+          ? "🔊"
+          : "🔇"
       );
 
-
-    setText(
-      UI.voiceRateValue,
-      `${voiceAssistant.rate.toFixed(2)}x`
-    );
-
-  }
-);
+    }
+  );
 
 
-UI.voiceTest.addEventListener(
-  "click",
-  () => {
+UI.voiceSelect
+  ?.addEventListener(
+    "change",
+    () => {
 
-    voiceAssistant.speak(
-      "Asistente de voz funcionando. Matches se pronuncia coincidencia."
-    );
+      voiceAssistant.voice =
+        voiceAssistant.voices.find(
+          (voice) =>
+            `${voice.name}|${voice.lang}` ===
+            UI.voiceSelect.value
+        ) ||
+        voiceAssistant.voice;
 
-  }
-);
+    }
+  );
+
+
+UI.voiceRate
+  ?.addEventListener(
+    "input",
+    () => {
+
+      voiceAssistant.rate =
+        Number(
+          UI.voiceRate.value
+        );
+
+
+      setText(
+        UI.voiceRateValue,
+        `${voiceAssistant.rate.toFixed(2)}x`
+      );
+
+    }
+  );
+
+
+UI.voiceTest
+  ?.addEventListener(
+    "click",
+    () => {
+
+      voiceAssistant.speak(
+        "Asistente de voz funcionando. Matches se pronuncia coincidencia.",
+        {
+          replace:
+            true
+        }
+      );
+
+    }
+  );
 
 
 /* ==========================================
    DIAGNÓSTICOS
    ========================================== */
 
-UI.diagnosticButton.addEventListener(
-  "click",
-  () => {
+UI.diagnosticButton
+  ?.addEventListener(
+    "click",
+    () => {
 
-    const open =
-      UI.diagnosticPanel.hidden;
-
-
-    UI.diagnosticPanel.hidden =
-      !open;
+      const open =
+        UI.diagnosticPanel.hidden;
 
 
-    UI.diagnosticButton.textContent =
-      open
-        ? "🛠 CERRAR"
-        : "🛠 ABRIR";
-
-  }
-);
+      UI.diagnosticPanel.hidden =
+        !open;
 
 
-UI.copyDiagnostic.addEventListener(
-  "click",
-  async () => {
-
-    try {
-
-      await navigator.clipboard.writeText(
-        diagnostics.exportText() ||
-        "Sin eventos."
-      );
-
-
-      log(
-        "Diagnóstico copiado.",
-        "ok"
-      );
+      UI.diagnosticButton.textContent =
+        open
+          ? "🛠 CERRAR"
+          : "🛠 ABRIR";
 
     }
+  );
 
-    catch (
-      error
-    ) {
 
-      diagnostics.error(
-        "No se pudo copiar el diagnóstico.",
-        {
-          message:
-            error.message
-        }
-      );
+UI.copyDiagnostic
+  ?.addEventListener(
+    "click",
+    async () => {
+
+      try {
+
+        await navigator.clipboard.writeText(
+          diagnostics.exportText() ||
+          "Sin eventos."
+        );
+
+
+        log(
+          "Diagnóstico copiado.",
+          "ok"
+        );
+
+      }
+
+      catch (
+        error
+      ) {
+
+        diagnostics.error(
+          "No se pudo copiar el diagnóstico.",
+          {
+
+            message:
+              error.message
+
+          }
+        );
+
+      }
 
     }
-
-  }
-);
+  );
 
 
-UI.clearDiagnostic.addEventListener(
-  "click",
-  () =>
-    diagnostics.clear()
-);
+UI.clearDiagnostic
+  ?.addEventListener(
+    "click",
+    () => {
+
+      diagnostics.clear();
+
+    }
+  );
 
 
-UI.clearLog.addEventListener(
-  "click",
-  () => {
+UI.clearLog
+  ?.addEventListener(
+    "click",
+    () => {
 
-    UI.activityLog.innerHTML =
-      "";
+      if (
+        UI.activityLog
+      ) {
 
-  }
-);
+        UI.activityLog.innerHTML =
+          "";
 
+      }
 
-UI.resetStats.addEventListener(
-  "click",
-  () => {
-
-    statistics.reset(
-      statsKey()
-    );
+    }
+  );
 
 
-    renderStats();
+UI.resetStats
+  ?.addEventListener(
+    "click",
+    () => {
 
-  }
-);
+      statistics.reset(
+        statsKey()
+      );
+
+
+      renderStats();
+
+    }
+  );
 
 
 /* ==========================================
    CALIBRACIÓN
    ========================================== */
 
-UI.saveCalibration.addEventListener(
-  "click",
-  () => {
+UI.saveCalibration
+  ?.addEventListener(
+    "click",
+    () => {
 
-    const second =
-      Number(
-        UI.executedSecond.value
+      const second =
+        Number(
+          UI.executedSecond.value
+        );
+
+
+      const result =
+        UI.manualResult.value;
+
+
+      if (
+        !second ||
+        ![
+          "success",
+          "failed"
+        ].includes(
+          result
+        )
+      ) {
+
+        log(
+          "Seleccione segundo y resultado antes de guardar.",
+          "warn"
+        );
+
+
+        return;
+
+      }
+
+
+      executionCalibrator.record(
+        calibrationContext(),
+        second,
+        result ===
+          "success"
       );
 
 
-    const result =
-      UI.manualResult.value;
+      statistics.record(
+        statsKey(),
+        result ===
+          "success"
+      );
 
 
-    if (
-      !second ||
-      ![
-        "success",
-        "failed"
-      ].includes(
-        result
-      )
-    ) {
+      populateMarketSelector();
+
+
+      renderLanguage();
+
+
+      renderTicker();
+
+
+      renderStats();
+
+
+      renderCalibration();
+
+
+      UI.executedSecond.value =
+        "";
+
+
+      UI.manualResult.value =
+        "";
+
 
       log(
-        "Seleccione segundo y resultado antes de guardar.",
+        `Resultado guardado para el segundo ${second}.`,
+        "ok"
+      );
+
+    }
+  );
+
+
+UI.resetCalibration
+  ?.addEventListener(
+    "click",
+    () => {
+
+      executionCalibrator.reset(
+        calibrationContext()
+      );
+
+
+      renderCalibration();
+
+
+      log(
+        "Calibración reiniciada para esta configuración.",
         "warn"
       );
 
-
-      return;
-
     }
-
-
-    executionCalibrator.record(
-      calibrationContext(),
-      second,
-      result ===
-        "success"
-    );
-
-
-    statistics.record(
-      statsKey(),
-      result ===
-        "success"
-    );
-
-
-    populateMarketSelector();
-
-    renderLanguage();
-
-    renderTicker();
-
-    renderStats();
-
-    renderCalibration();
-
-
-    UI.executedSecond.value =
-      "";
-
-
-    UI.manualResult.value =
-      "";
-
-
-    log(
-      `Resultado guardado para el segundo ${second}.`,
-      "ok"
-    );
-
-  }
-);
-
-
-UI.resetCalibration.addEventListener(
-  "click",
-  () => {
-
-    executionCalibrator.reset(
-      calibrationContext()
-    );
-
-
-    renderCalibration();
-
-
-    log(
-      "Calibración reiniciada para esta configuración.",
-      "warn"
-    );
-
-  }
-);
+  );
 
 
 /* ==========================================
@@ -3773,42 +4852,47 @@ UI.entryAlertDelay
    IDIOMA
    ========================================== */
 
-UI.languageSelect.addEventListener(
-  "change",
-  () => {
+UI.languageSelect
+  ?.addEventListener(
+    "change",
+    () => {
 
-    i18n.setLanguage(
-      UI.languageSelect.value
-    );
-
-
-    renderLanguage();
-
-    renderTicker();
+      i18n.setLanguage(
+        UI.languageSelect.value
+      );
 
 
-    UI.marketSelect.dispatchEvent(
-      new Event(
-        "optionsupdated"
-      )
-    );
+      renderLanguage();
 
 
-    UI.strategySelect.dispatchEvent(
-      new Event(
-        "optionsupdated"
-      )
-    );
+      renderTicker();
 
 
-    UI.modeSelect.dispatchEvent(
-      new Event(
-        "optionsupdated"
-      )
-    );
+      UI.marketSelect
+        ?.dispatchEvent(
+          new Event(
+            "optionsupdated"
+          )
+        );
 
-  }
-);
+
+      UI.strategySelect
+        ?.dispatchEvent(
+          new Event(
+            "optionsupdated"
+          )
+        );
+
+
+      UI.modeSelect
+        ?.dispatchEvent(
+          new Event(
+            "optionsupdated"
+          )
+        );
+
+    }
+  );
 
 
 window.addEventListener(
@@ -3816,6 +4900,7 @@ window.addEventListener(
   () => {
 
     renderLanguage();
+
 
     renderTicker();
 
@@ -3827,75 +4912,79 @@ window.addEventListener(
    MERCADOS DINÁMICOS
    ========================================== */
 
-UI.refreshMarkets.addEventListener(
-  "click",
-  () => {
+UI.refreshMarkets
+  ?.addEventListener(
+    "click",
+    () => {
 
-    derivAPI.requestActiveSymbols();
-
-
-    setText(
-      UI.marketRegistryMessage,
-      "Solicitando mercados activos a Deriv..."
-    );
-
-  }
-);
-
-
-UI.addManualMarket.addEventListener(
-  "click",
-  () => {
-
-    try {
-
-      marketRegistry.addManual({
-        symbol:
-          UI.manualMarketSymbol.value,
-
-        name:
-          UI.manualMarketName.value,
-
-        oneSecond:
-          UI.manualMarketOneSecond.checked
-      });
-
-
-      populateMarketSelector();
+      derivAPI.requestActiveSymbols();
 
 
       setText(
         UI.marketRegistryMessage,
-        "Mercado agregado correctamente."
-      );
-
-
-      UI.manualMarketSymbol.value =
-        "";
-
-
-      UI.manualMarketName.value =
-        "";
-
-
-      UI.manualMarketOneSecond.checked =
-        false;
-
-    }
-
-    catch (
-      error
-    ) {
-
-      setText(
-        UI.marketRegistryMessage,
-        error.message
+        "Solicitando mercados activos a Deriv..."
       );
 
     }
+  );
 
-  }
-);
+
+UI.addManualMarket
+  ?.addEventListener(
+    "click",
+    () => {
+
+      try {
+
+        marketRegistry.addManual({
+
+          symbol:
+            UI.manualMarketSymbol.value,
+
+          name:
+            UI.manualMarketName.value,
+
+          oneSecond:
+            UI.manualMarketOneSecond.checked
+
+        });
+
+
+        populateMarketSelector();
+
+
+        setText(
+          UI.marketRegistryMessage,
+          "Mercado agregado correctamente."
+        );
+
+
+        UI.manualMarketSymbol.value =
+          "";
+
+
+        UI.manualMarketName.value =
+          "";
+
+
+        UI.manualMarketOneSecond.checked =
+          false;
+
+      }
+
+      catch (
+        error
+      ) {
+
+        setText(
+          UI.marketRegistryMessage,
+          error.message
+        );
+
+      }
+
+    }
+  );
 
 
 /* ==========================================
@@ -3967,6 +5056,7 @@ derivAPI.on(
 
     renderTicker();
 
+
     renderControls();
 
   }
@@ -3978,12 +5068,16 @@ derivAPI.on(
   ({
     state:
       status,
+
     label
-  }) =>
+  }) => {
+
     renderConnection(
       status,
       label
-    )
+    );
+
+  }
 );
 
 
@@ -3997,11 +5091,14 @@ derivAPI.on(
   "error",
   ({
     message
-  }) =>
+  }) => {
+
     log(
       message,
       "error"
-    )
+    );
+
+  }
 );
 
 
@@ -4010,11 +5107,14 @@ derivAPI.on(
   ({
     message,
     level
-  }) =>
+  }) => {
+
     log(
       message,
       level
-    )
+    );
+
+  }
 );
 
 
@@ -4025,14 +5125,16 @@ derivAPI.on(
 memoryManager.register(
   () => {
 
-    clearInterval(
-      state.countdownTimer
-    );
+    invalidarPrediccionActual();
 
 
     clearTimeout(
       state.cooldownTimer
     );
+
+
+    state.cooldownTimer =
+      null;
 
 
     state.predictionActive =
@@ -4057,12 +5159,25 @@ window.addEventListener(
   "beforeunload",
   () => {
 
+    invalidarPrediccionActual();
+
+
     derivAPI.disconnect();
 
 
     memoryManager.clean(
       "before-unload"
     );
+
+
+    try {
+
+      botChannel
+        ?.close();
+
+    }
+
+    catch {}
 
   }
 );
@@ -4079,8 +5194,9 @@ init()
     ) => {
 
       diagnostics.error(
-        "Error durante init().",
+        "Error durante init() FIX13.4.",
         {
+
           name:
             error.name,
 
@@ -4089,6 +5205,7 @@ init()
 
           stack:
             error.stack
+
         }
       );
 
@@ -4098,5 +5215,5 @@ init()
 
 /* ==========================================
    FIN APP.JS
-   FIX13.3 SYNC
+   FIX13.4
    ========================================== */
