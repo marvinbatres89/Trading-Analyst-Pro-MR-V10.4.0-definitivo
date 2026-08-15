@@ -43,26 +43,27 @@ function hardGuard(strategy, opportunity, consensus) {
   */
 
   if (
-    strategy === "even_odd" ||
-    strategy === "over_under"
-  ) {
-    if (Number(metadata.agreement) !== 3) {
-      return {
-        ok: false,
-        reason: "Las tres ventanas de dígitos no están alineadas."
-      };
-    }
+  strategy === "even_odd" ||
+  strategy === "over_under"
+) {
+  if (Number(metadata.agreement) < 2) {
+    return {
+      ok: false,
+      reason: "No existe suficiente acuerdo entre las ventanas de dígitos."
+    };
+  }
 
-    if (
-      Number(metadata.shortDiff) < 8 ||
-      Number(metadata.mediumDiff) < 4 ||
-      Number(metadata.longDiff) < 2
-    ) {
-      return {
-        ok: false,
-        reason: "La diferencia entre ventanas de dígitos es demasiado débil."
-      };
-    }
+  if (
+    Number(metadata.shortDiff) < 6 ||
+    Number(metadata.mediumDiff) < 3 ||
+    Number(metadata.longDiff) < 1.5
+  ) {
+    return {
+      ok: false,
+      reason: "La diferencia entre ventanas de dígitos es demasiado débil."
+    };
+  }
+}
   }
 
   if (strategy === "rise_fall") {
