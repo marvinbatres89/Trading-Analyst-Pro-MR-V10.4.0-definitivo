@@ -3352,7 +3352,231 @@ async function beginPredictionSequence(
 
 
 /* ==========================================
+   FIX13.6D
+   DIAGNÓSTICO DE PREDICCIÓN
+
+   ENGINE 1
+   → ESPERA REAL
+   → ENGINE 2
+   → CONSENSUS
+   → TIMING
+   → QUALITY
+   ========================================== */
+
+function registrarDiagnosticoPrediccion({
+  runId,
+  first,
+  fresh,
+  validation,
+  consensus,
+  timing,
+  quality,
+  validationDelay
+}) {
+
+  diagnostics.info(
+    "FIX13.6D DIAGNÓSTICO DE PREDICCIÓN.",
+    {
+
+      runId,
+
+      mercado:
+        state.symbol,
+
+      estrategia:
+        state.strategy,
+
+      modo:
+        state.mode,
+
+      validationDelayMs:
+        validationDelay,
+
+
+      engine1: {
+
+        direction:
+          first?.direction,
+
+        score:
+          first?.score,
+
+        reasons:
+          first?.reasons,
+
+        warnings:
+          first?.warnings,
+
+        metadata:
+          first?.metadata
+
+      },
+
+
+      engine1Fresh: {
+
+        direction:
+          fresh?.direction,
+
+        score:
+          fresh?.score,
+
+        reasons:
+          fresh?.reasons,
+
+        warnings:
+          fresh?.warnings,
+
+        metadata:
+          fresh?.metadata
+
+      },
+
+
+      engine2: {
+
+        approved:
+          validation?.approved,
+
+        direction:
+          validation?.direction,
+
+        score:
+          validation?.score,
+
+        freshData:
+          validation?.freshData,
+
+        strategyValidation:
+          validation?.strategyValidation,
+
+        reasons:
+          validation?.reasons,
+
+        warnings:
+          validation?.warnings
+
+      },
+
+
+      consensus: {
+
+        approved:
+          consensus?.approved,
+
+        direction:
+          consensus?.direction,
+
+        score:
+          consensus?.score
+
+      },
+
+
+      timing: {
+
+        approved:
+          timing?.approved,
+
+        status:
+          timing?.status,
+
+        scoreAdjustment:
+          timing?.scoreAdjustment,
+
+        reason:
+          timing?.reason
+
+      },
+
+
+      quality: {
+
+        approved:
+          quality?.approved,
+
+        state:
+          quality?.state,
+
+        score:
+          quality?.score,
+
+        threshold:
+          quality?.threshold,
+
+        reason:
+          quality?.reason
+
+      }
+
+    }
+  );
+
+
+  log(
+    `DIAG FIX13.6D → E1 ${
+      first?.direction ??
+      "--"
+    } ${
+      first?.score ??
+      0
+    } · E1 NUEVO ${
+      fresh?.direction ??
+      "--"
+    } ${
+      fresh?.score ??
+      0
+    } · E2 ${
+      validation?.approved
+        ? "OK"
+        : "NO"
+    } ${
+      validation?.score ??
+      0
+    } · CONS ${
+      consensus?.approved
+        ? "OK"
+        : "NO"
+    } ${
+      consensus?.score ??
+      0
+    } · QUALITY ${
+      quality?.approved
+        ? "READY"
+        : "WAIT"
+    } ${
+      quality?.score ??
+      0
+    }/${
+      quality?.threshold ??
+      "--"
+    }`,
+    quality?.approved
+      ? "ok"
+      : "warn"
+  );
+
+}
+
+
+/* ==========================================
    SOLICITAR PREDICCIÓN
+   FIX13.6D
+
+   CORRECCIÓN PRINCIPAL:
+
+   ANTES:
+   ESPERA
+   → ENGINE 1
+   → ENGINE 2
+
+   AHORA:
+   ENGINE 1
+   → ESPERA
+   → ENGINE 2
+
+   DE ESTA FORMA LOS DOS MOTORES
+   ANALIZAN DOS MOMENTOS DIFERENTES.
    ========================================== */
 
 async function requestPrediction() {
@@ -3420,7 +3644,7 @@ async function requestPrediction() {
 
   setText(
     UI.signalTitle,
-    "Validación rápida"
+    "Validación Engine 1 → Engine 2"
   );
 
 
@@ -3451,8 +3675,9 @@ async function requestPrediction() {
 
 
   diagnostics.info(
-    "Predicción FIX13.4.2 solicitada.",
+    "Predicción FIX13.6D solicitada.",
     {
+
       runId,
 
       symbol:
@@ -3462,10 +3687,88 @@ async function requestPrediction() {
         state.strategy,
 
       mode:
-        state.mode
+        state.mode,
+
+      ticks:
+        marketBuffer.prices.length,
+
+      digits:
+        marketBuffer.digits.length
+
     }
   );
 
+
+  /* ======================================
+     PASO 1
+     ENGINE 1 TOMA LA PRIMERA MUESTRA
+     INMEDIATAMENTE.
+
+     ESTE ERA EL ERROR PRINCIPAL.
+     ====================================== */
+
+  const firstSnapshot =
+    buildSnapshot({
+
+      prices:
+        marketBuffer.prices,
+
+      digits:
+        marketBuffer.digits,
+
+      mode:
+        state.mode
+
+    });
+
+
+  const first =
+    exploreOpportunity(
+      state.strategy,
+      firstSnapshot
+    );
+
+
+  diagnostics.info(
+    "FIX13.6D ENGINE 1 CAPTURADO.",
+    {
+
+      runId,
+
+      direction:
+        first?.direction,
+
+      score:
+        first?.score,
+
+      prices:
+        marketBuffer.prices.length,
+
+      digits:
+        marketBuffer.digits.length,
+
+      metadata:
+        first?.metadata
+
+    }
+  );
+
+
+  setText(
+    UI.engineDetail,
+    `Engine 1: ${
+      first?.direction ||
+      "WAIT"
+    } · ${
+      first?.score ??
+      0
+    }/100 · esperando nueva muestra.`
+  );
+
+
+  /* ======================================
+     TIEMPO ENTRE ENGINE 1 Y ENGINE 2
+     ====================================== */
 
   const validationDelay =
     state.strategy ===
@@ -3487,6 +3790,12 @@ async function requestPrediction() {
           : ENGINE.quickValidationMs;
 
 
+  /* ======================================
+     PASO 2
+     AHORA SÍ ESPERAMOS DESPUÉS
+     DE HABER TOMADO ENGINE 1.
+     ====================================== */
+
   await sleep(
     validationDelay
   );
@@ -3503,15 +3812,15 @@ async function requestPrediction() {
   }
 
 
-  const first =
-    exploreOpportunity(
-      state.strategy,
-      state.snapshot
-    );
-
+  /* ======================================
+     PASO 3
+     ENGINE 2 RECIBE UNA SEGUNDA
+     FOTOGRAFÍA DEL MERCADO.
+     ====================================== */
 
   const freshSnapshot =
     buildSnapshot({
+
       prices:
         marketBuffer.prices,
 
@@ -3520,6 +3829,7 @@ async function requestPrediction() {
 
       mode:
         state.mode
+
     });
 
 
@@ -3530,6 +3840,11 @@ async function requestPrediction() {
     );
 
 
+  /* ======================================
+     PASO 4
+     VALIDACIÓN ENGINE 2
+     ====================================== */
+
   const validation =
     validateOpportunity(
       first,
@@ -3538,6 +3853,11 @@ async function requestPrediction() {
     );
 
 
+  /* ======================================
+     PASO 5
+     CONSENSO
+     ====================================== */
+
   const consensus =
     buildConsensus(
       first,
@@ -3545,8 +3865,14 @@ async function requestPrediction() {
     );
 
 
+  /* ======================================
+     PASO 6
+     TIMING
+     ====================================== */
+
   const timing =
     evaluateTiming({
+
       strategy:
         state.strategy,
 
@@ -3555,11 +3881,18 @@ async function requestPrediction() {
 
       latency:
         state.latency
+
     });
 
 
+  /* ======================================
+     PASO 7
+     FILTRO FINAL DE CALIDAD
+     ====================================== */
+
   const quality =
     applyQualityFilter({
+
       strategy:
         state.strategy,
 
@@ -3569,7 +3902,33 @@ async function requestPrediction() {
       consensus,
 
       timing
+
     });
+
+
+  /* ======================================
+     REGISTRAMOS TODO ANTES DE DECIDIR.
+     ====================================== */
+
+  registrarDiagnosticoPrediccion({
+
+    runId,
+
+    first,
+
+    fresh,
+
+    validation,
+
+    consensus,
+
+    timing,
+
+    quality,
+
+    validationDelay
+
+  });
 
 
   if (
@@ -3581,6 +3940,24 @@ async function requestPrediction() {
     return;
 
   }
+
+
+  /*
+    La segunda fotografía pasa a ser
+    el estado más reciente visible.
+  */
+
+  state.snapshot =
+    freshSnapshot;
+
+
+  state.lastOpportunity =
+    fresh;
+
+
+  renderIndicators(
+    freshSnapshot
+  );
 
 
   const result = {
@@ -3683,6 +4060,22 @@ async function requestPrediction() {
     );
 
 
+    diagnostics.info(
+      "FIX13.6D NO OPERAR.",
+      {
+
+        runId,
+
+        direction:
+          first.direction,
+
+        score:
+          first.score
+
+      }
+    );
+
+
     await sleep(
       2200
     );
@@ -3743,16 +4136,52 @@ async function requestPrediction() {
     );
 
 
+    const detalleDiagnostico =
+      `E1 ${
+        first?.direction ??
+        "--"
+      } ${
+        first?.score ??
+        0
+      } · E1 nuevo ${
+        fresh?.direction ??
+        "--"
+      } ${
+        fresh?.score ??
+        0
+      } · E2 ${
+        validation?.approved
+          ? "OK"
+          : "NO"
+      } ${
+        validation?.score ??
+        0
+      } · Consenso ${
+        consensus?.approved
+          ? "OK"
+          : "NO"
+      } ${
+        consensus?.score ??
+        0
+      } · ${
+        quality?.reason ||
+        "Sin entrada."
+      }`;
+
+
     showFloating(
       "prepare",
       "ESPERAR",
       "SIN ENTRADA",
-      quality.reason
+      detalleDiagnostico
     );
 
 
     voiceAssistant.speak(
-      `No hay una entrada suficientemente clara. ${quality.reason || ""}`,
+      `No hay una entrada suficientemente clara. ${
+        quality.reason ||
+        ""
+      }`,
       {
         replace:
           true
@@ -3761,15 +4190,59 @@ async function requestPrediction() {
 
 
     diagnostics.info(
-      "FIX13.4.2 señal descartada por calidad.",
+      "FIX13.6D señal descartada por calidad.",
       {
+
         runId,
 
-        score:
-          quality.score,
+        engine1Direction:
+          first?.direction,
+
+        engine1Score:
+          first?.score,
+
+        freshDirection:
+          fresh?.direction,
+
+        freshScore:
+          fresh?.score,
+
+        engine2Approved:
+          validation?.approved,
+
+        engine2Direction:
+          validation?.direction,
+
+        engine2Score:
+          validation?.score,
+
+        freshData:
+          validation?.freshData,
+
+        strategyValidation:
+          validation?.strategyValidation,
+
+        consensusApproved:
+          consensus?.approved,
+
+        consensusScore:
+          consensus?.score,
+
+        timingApproved:
+          timing?.approved,
+
+        timingStatus:
+          timing?.status,
+
+        qualityScore:
+          quality?.score,
+
+        threshold:
+          quality?.threshold,
 
         reason:
-          quality.reason
+          quality?.reason
+
       }
     );
 
@@ -3860,7 +4333,17 @@ async function requestPrediction() {
 
   setText(
     UI.engineDetail,
-    "Preparando explicación y sincronización FIX13.4.2."
+    `E1 ${
+      first.direction
+    } ${
+      first.score
+    } · E2 OK ${
+      validation.score
+    } · Consenso ${
+      consensus.score
+    } · READY ${
+      quality.score
+    }.`
   );
 
 
@@ -3874,13 +4357,48 @@ async function requestPrediction() {
   }
 
 
+  diagnostics.ok(
+    "FIX13.6D SEÑAL APROBADA.",
+    {
+
+      runId,
+
+      direction:
+        first.direction,
+
+      engine1Score:
+        first.score,
+
+      engine2Score:
+        validation.score,
+
+      consensusScore:
+        consensus.score,
+
+      qualityScore:
+        quality.score
+
+    }
+  );
+
+
+  /*
+    DESDE AQUÍ TODO SIGUE EXACTAMENTE
+    CON LA SECUENCIA FIX13.4.2:
+
+    EXPLICACIÓN
+    → PREPARAR BOT
+    → FRASE
+    → TARGET
+    → 10
+  */
+
   await beginPredictionSequence(
     result,
     runId
   );
 
 }
-
 
 /* ==========================================
    DIAGNÓSTICOS
