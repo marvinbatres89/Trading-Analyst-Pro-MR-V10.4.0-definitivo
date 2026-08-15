@@ -494,10 +494,37 @@ function minimumTicks() {
 
   if (
     state.strategy ===
+      "even_odd" ||
+    state.strategy ===
+      "over_under"
+  ) {
+
+    /*
+      FIX13.6E
+
+      Engine 1 necesita:
+      - ventana corta: 20
+      - ventana media: 40
+      - ventana larga: 60
+
+      Por eso PREDICTION no debe
+      habilitarse antes de 60 datos.
+    */
+
+    return 60;
+
+  }
+
+
+  if (
+    state.strategy ===
     "match"
   ) {
 
-    return ENGINE.minMatchTicks;
+    return Math.max(
+      60,
+      ENGINE.minMatchTicks
+    );
 
   }
 
