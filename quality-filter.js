@@ -63,7 +63,7 @@ function hardGuard(strategy, opportunity, consensus) {
       reason: "La diferencia entre ventanas de dígitos es demasiado débil."
     };
   }
-}
+
   }
 
   if (strategy === "rise_fall") {
