@@ -511,7 +511,7 @@ function minimumTicks() {
       habilitarse antes de 60 datos.
     */
 
-    return 60;
+    return 40;
 
   }
 
