@@ -4711,9 +4711,9 @@ async function init() {
   );
 
 
-  diagnostics.ok(
-    `Trading Analyst Pro MR V${APP_VERSION} iniciado · FIX13.4.2 · TARGET 10 + PREPARE BOT.`
-  );
+ diagnostics.ok(
+  `Trading Analyst Pro MR V${APP_VERSION} iniciado · FIX13.6D · VALIDACIÓN REAL + TARGET 10.`
+); 
 
 
   loadEntrySettings();
