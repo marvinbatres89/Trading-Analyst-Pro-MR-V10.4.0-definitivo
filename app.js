@@ -4743,15 +4743,15 @@ async function init() {
 
 
   setText(
-    UI.appUpdateStatus,
-    "FIX13.4.2"
-  );
+  UI.appUpdateStatus,
+  "FIX13.6D"
+);
 
 
   log(
-    `Trading Analyst Pro MR V${APP_VERSION} listo · FIX13.4.2 · TARGET 10.`,
-    "ok"
-  );
+  `Trading Analyst Pro MR V${APP_VERSION} listo · FIX13.6D · VALIDACIÓN REAL.`,
+  "ok"
+);
 
 }
 
