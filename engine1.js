@@ -144,12 +144,12 @@ function digitBinary(strategy, snapshot) {
     Sigue existiendo contexto largo, pero
     no obliga a esperar tanto para cada arranque.
   */
-  if (short.count < 20 || medium.count < 40 || long.count < 60) {
+  if (short.count < 20 || medium.count < 30 || long.count < 40) {
     return output(
       strategy,
       "WAIT",
       0,
-      [`Recopilando dígitos: ${short.count}/20 · ${medium.count}/40 · ${long.count}/60.`]
+      [`Recopilando dígitos: ${short.count}/20 · ${medium.count}/30 · ${long.count}/40.`]
     );
   }
 
