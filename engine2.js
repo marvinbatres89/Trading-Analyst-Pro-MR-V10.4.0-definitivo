@@ -95,11 +95,10 @@ function validateDigitBinary(freshOpportunity) {
     freshOpportunity?.metadata || {};
 
   const stable =
-    metadata.stable === true &&
-    Number(metadata.agreement) === 3 &&
-    Number(metadata.shortDiff) >= 8 &&
-    Number(metadata.mediumDiff) >= 4 &&
-    Number(metadata.longDiff) >= 2;
+  Number(metadata.agreement) >= 2 &&
+  Number(metadata.shortDiff) >= 6 &&
+  Number(metadata.mediumDiff) >= 3 &&
+  Number(metadata.longDiff) >= 1.5;
 
   return {
     approved: stable,
